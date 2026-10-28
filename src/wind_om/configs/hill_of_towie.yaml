@@ -1,0 +1,13 @@
+# Controller alarm log of the Hill of Towie open data (tblAlarmLog, one file per month). Timestamps are UTC.
+# The log has no category and no stop flag: both come from the code mapping (siemens_swt_hot.csv).
+format: csv
+columns:
+  turbine_id: Turbine
+  start: TimeOn
+  end: TimeOff
+  code: Alarmcode
+timezone: UTC
+ambiguous: raise
+# Generator cut-in / fast cut-out messages (codes 20 and 25, documented as non-stopping) are over 80 % of the
+# rows and carry no fault information: dropped on reading.
+drop: {Alarmcode: ["20", "25"]}

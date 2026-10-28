@@ -1,0 +1,5 @@
+primary,primary_text,secondary,secondary_text,count,primary_episodes,confidence,lift
+6690,Icing (stop),6682,Icing (dev. electr. power),5,5,1.0,587.8
+3110,Frequency converter error,1050,Drivetrain oscillations,2,8,0.25,367.375
+2100,Feedback brake 1,5720,Brake accumulator defect,1,1,1.0,2939.0
+3585,Maximum grid frequency,3547,Overfrequency,1,9,0.1111111111111111,326.55555555555554

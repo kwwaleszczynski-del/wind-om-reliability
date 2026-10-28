@@ -1,0 +1,16 @@
+# EXAMPLE ONLY - column names are placeholders, not a Nordex specification. Timestamps carry their UTC offset
+# (e.g. 2026-10-25 02:30:00+01:00), so no time zone guess is needed; rows of type "Info" are dropped.
+format: csv
+read: {sep: ",", encoding: utf-8}
+columns:
+  turbine_id: Turbine
+  start: Begin
+  end: End
+  code: Status number
+  description: Status text
+  category: Availability category
+timezone: UTC                # only used for timestamps without an offset
+stop: {column: Event type, values: [Error, Stop]}
+drop: {Event type: [Info]}
+category_map: {Error: forced_outage, Maintenance: scheduled_maintenance, Weather: environmental,
+               Grid: grid, Curtailment: requested}

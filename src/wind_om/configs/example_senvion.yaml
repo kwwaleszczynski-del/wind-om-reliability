@@ -1,0 +1,16 @@
+# EXAMPLE ONLY - a Senvion status list exported from a SCADA portal in local time. Placeholder column names;
+# the open Kelmarsh / Penmanshiel logs use greenbyte.yaml instead. Code texts: mappings/senvion_mm.csv.
+format: csv
+read: {sep: ";", encoding: cp1250}
+columns:
+  turbine_id: WEC
+  start: Start
+  end: End
+  code: Status code
+  description: Status text
+  category: Status type
+timezone: Europe/Warsaw
+ambiguous: infer
+datetime_format: "%Y-%m-%d %H:%M:%S"
+stop: {column: Status type, values: [Stop]}
+category_map: {Stop: unknown, Warning: information, Information: information}   # categories from the mapping

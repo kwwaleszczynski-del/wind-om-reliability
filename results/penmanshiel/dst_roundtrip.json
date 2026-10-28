@@ -1,0 +1,9 @@
+{
+  "farm": "penmanshiel",
+  "tz": "Europe/London",
+  "events": 1056488,
+  "ambiguous_starts": 51,
+  "start_mismatches": 22,
+  "end_mismatches": 19,
+  "max_error_h": 1.0
+}

@@ -1,0 +1,2 @@
+component,failures,rate_per_turbine_year,expected_per_year_fleet,part_share,lead_time_demand_mean,stock,p_stockout
+unmapped,1611,7.918425914250805,166.2869441992669,1.0,41.57173604981673,52,0.04919848248201857

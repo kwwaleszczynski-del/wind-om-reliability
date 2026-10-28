@@ -1,0 +1,9 @@
+{
+  "farm": "kelmarsh",
+  "tz": "Europe/London",
+  "events": 311989,
+  "ambiguous_starts": 10,
+  "start_mismatches": 6,
+  "end_mismatches": 3,
+  "max_error_h": 1.0
+}

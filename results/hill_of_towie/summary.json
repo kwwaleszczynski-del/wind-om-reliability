@@ -1,0 +1,53 @@
+{
+  "turbines": 21,
+  "observed_turbine_years": 214.78849243922224,
+  "stop_episodes": 28717,
+  "failures": 1611,
+  "fleet_wide_episodes": 1995,
+  "failures_per_turbine_year": 7.500401821833438,
+  "mtbf_h": 1107.0382036692185,
+  "mttr_h": 23.119133560935236,
+  "ttr_median_h": 1.0172222222222222,
+  "failure_downtime_h": 37244.924166666664,
+  "repeat_rate": 0.3271260086902545,
+  "start": "2016-01-02 00:00:00+00:00",
+  "end": "2026-04-01 00:00:00+00:00",
+  "crow_beta": 0.4427519221166482,
+  "crow_beta_lo": 0.33597195510845346,
+  "crow_beta_hi": 0.5498284464221765,
+  "p_laplace": 6.822597153906343e-20,
+  "trend": "improving",
+  "weibull_shape": 0.43727812592218956,
+  "weibull_shape_lo": 0.4225518748996856,
+  "weibull_shape_hi": 0.45229896898720406,
+  "codes_80pct_downtime": 21,
+  "codes_with_downtime": 101,
+  "bad_actor_turbines": [
+    "T06",
+    "T14"
+  ],
+  "bad_actor_code_turbine_pairs": 27,
+  "restoration_shares": {
+    "auto_reset": 0.34016139044072,
+    "not_logged": 0.65983860955928
+  },
+  "response_median_h": null,
+  "unmapped_downtime_share": 0.9226804778360108,
+  "repeat_rate_chance": 0.015663060292108583,
+  "farm": "hill_of_towie",
+  "name": "Hill of Towie (21 x Siemens SWT-2.3-VS-82)",
+  "events": 1379990,
+  "stops": 149543,
+  "scada_f1": 0.8783815731703198,
+  "scada_precision": 0.8419189848285389,
+  "scada_recall": 0.9181454459872911,
+  "clock_best_shift_h": 0.0,
+  "clock_best_f1": 0.8783815731703198,
+  "lost_mwh_scada_years": 5334.076841187591,
+  "scada_years": [
+    2021
+  ],
+  "shutdown_h_operator": 6907.133055555556,
+  "stop_h_log_scada_years": 9226.198055555555,
+  "monthly_hours_corr": 0.9887421931089443
+}

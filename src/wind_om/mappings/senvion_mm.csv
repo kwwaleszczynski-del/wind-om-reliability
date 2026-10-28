@@ -1,0 +1,269 @@
+code,component,role,category,stopping,description
+0,control,,,0,System OK
+10,environment,,,0,Wind < start wind
+20,service,onsite,scheduled_maintenance,1,Manual stop - on site
+21,service,remote,forced_outage,1,Manual stop - remote
+25,service,onsite,scheduled_maintenance,1,Manual stop without login
+45,environment,,,0,Limiting wind speed exceeded
+47,environment,,environmental,1,Max. windspeed BP50
+55,control,,forced_outage,1,WEC shut down
+59,tower_nacelle,,,0,Max. acceleration
+60,environment,,forced_outage,1,Wind > power
+61,environment,,forced_outage,1,Wind < power
+62,environment,,environmental,1,Extreme gust
+63,environment,,environmental,1,Deviation of wind direction>45°
+64,environment,,environmental,1,Max. wind speed
+65,environment,,,0,Absence of wind during run-up
+68,environment,,environmental,1,Deviation winddirection > 60°
+75,gearbox,,,0,Reduced power gearbox
+77,electrical,,,0,Reduced power transformer
+100,control,,forced_outage,1,Safety chain open
+108,operator,,,0,Technical curtailment
+110,control,,forced_outage,1,Emergency stop top box
+111,operator,,forced_outage,0,Grid constraint curtailment
+117,control,,forced_outage,1,Emergency stop base box
+200,service,onsite,scheduled_maintenance,1,Release manual pitch
+210,service,onsite,scheduled_maintenance,1,Manual brake
+245,operator,,,0,Parameterized P red.
+246,operator,,,0,Parameterized speed red.
+248,control,,,0,Red. op. soft cut out
+250,control,,,0,Update active
+251,control,,forced_outage,1,Stop for man. reboot
+305,brake_hydraulics,,forced_outage,1,Brake control
+400,service,onsite,,0,Manual operation
+402,service,onsite,,0,Semi-automatic operation
+405,service,onsite,scheduled_maintenance,1,Stop manual operation
+412,service,,technical_standby,1,Test brake program 190
+414,service,,technical_standby,1,Test brake program 180
+415,service,,technical_standby,1,Test brake program 170
+416,service,,technical_standby,1,Test brake program 75
+418,service,,technical_standby,1,Test brake program 60
+420,service,,technical_standby,1,Test brake program 52
+422,service,,technical_standby,1,Test brake program 50
+435,drivetrain,,forced_outage,1,No speed development
+440,control,,,0,Repeating error BP 0
+455,control,,forced_outage,1,Repeating error BP52
+517,pitch,,forced_outage,1,Pitch limit switch 2
+550,pitch,,forced_outage,1,Pitch current asymmetry
+555,pitch,,forced_outage,1,Pitch angle deviation
+564,pitch,,forced_outage,1,Bladeangle implausible
+570,pitch,,forced_outage,1,Pitch too slow BP180
+581,pitch,,forced_outage,1,Set point><actual value axis 1
+582,pitch,,forced_outage,1,Set point><actual value axis 2
+583,pitch,,forced_outage,1,Set point><actual value axis 3
+630,pitch,,forced_outage,1,Overload fan pitch motor
+650,pitch,,forced_outage,1,Pitch controller communication error
+656,pitch,,forced_outage,1,Error pitch converter 1
+657,pitch,,forced_outage,1,Error pitch converter 2
+658,pitch,,forced_outage,1,Error pitch converter 3
+665,pitch,,forced_outage,1,Pitch error
+670,pitch,,forced_outage,1,Max. pitch speed encoder A
+675,pitch,,,0,Pitch measuring system 1><2
+681,pitch,,,0,Limit switch error 95° axis 1
+682,pitch,,,0,Limit switch error 95° axis 2
+683,pitch,,,0,Limit switch error 95° axis 3
+692,pitch,,forced_outage,1,Pitch run-away (hub box v.>=4)
+697,sensors,,,0,Timeout B sensor active
+700,pitch,,forced_outage,1,Batt. undervoltage/overvoltage
+707,pitch,,technical_standby,1,Stop battery test
+710,pitch,,technical_standby,1,Battery test
+711,pitch,,,0,Battery monitoring axis 1
+712,pitch,,,0,Battery monitoring axis 2
+713,pitch,,,0,Battery monitoring axis 3
+714,pitch,,,0,Battery monitoring test interval
+715,pitch,,forced_outage,1,Charging circuit pitch
+716,pitch,,,0,Battery charge cycle axis 1 error
+717,pitch,,,0,Battery charge cycle axis 2 error
+718,pitch,,,0,Battery charge cycle axis 3 error
+720,pitch,,,0,Pitch batteries charging cycle
+725,pitch,,forced_outage,1,Battery voltage axis 1
+735,pitch,,forced_outage,1,Battery voltage axis 3
+785,converter,,,0,Error brake resistor CHP
+801,sensors,,forced_outage,1,Rotor sensor A defective
+802,sensors,,forced_outage,1,Rotor sensor B defective
+805,drivetrain,,forced_outage,1,High rotor speed nacelle
+815,drivetrain,,forced_outage,1,Rotor overspeed nacelle
+820,drivetrain,,technical_standby,1,Rotor rotation direction nacelle
+850,pitch,,,0,Error lubrication pump pitch
+856,control,,,0,Unknown status code
+1050,drivetrain,,,0,Drivetrain oscillations
+1055,drivetrain,,forced_outage,1,Max. drivetrain oscillations
+1065,drivetrain,,forced_outage,1,Drive train monitor level 1
+1070,drivetrain,,technical_standby,1,Drive train monitor level 2
+1150,sensors,,,0,CMS drive train system error
+1160,control,,,0,Comm.err. IEC client -> CMS drive tr.
+1161,control,,,0,Comm.err. IEC server <- CMS drive tr.
+1320,service,onsite,,0,Manual operation lubrication rotorbearing
+1510,gearbox,,forced_outage,1,Low gearbox oil pressure
+1548,gearbox,,forced_outage,1,Missing gear oil (low rpm)
+1550,gearbox,,forced_outage,1,Missing gear oil (high rpm)
+1552,gearbox,,,0,Gearbox warm-up stage
+1555,gearbox,,,0,Gear heating enabled
+1560,service,onsite,,0,Manual operation fan gear
+1565,service,onsite,,0,Manual operation gear heating
+1567,service,onsite,,0,Manual operation gearbox heating module
+1570,service,onsite,,0,Manual operation gear oil pump
+1575,service,onsite,,0,Manual operation gear bypass filter
+1620,gearbox,,forced_outage,1,Implausible gear speed
+1630,gearbox,,forced_outage,1,Disc filter adaption implausible
+1700,gearbox,,,0,High temp. gear bearing 1
+1710,gearbox,,,0,High temp. gear bearing 2
+1725,gearbox,,forced_outage,1,Low gear oil temperature
+1729,sensors,,,0,PT100 inlet gear defect
+1800,gearbox,,forced_outage,1,Overload gear oil pump
+1810,gearbox,,,0,Overload gear heating
+1815,gearbox,,forced_outage,1,Overload fan oil cooler gear
+1825,gearbox,,,0,Overload gear bypass filter
+1860,gearbox,,,0,Oil filter gear choked
+1920,gearbox,,,0,Particle sensor defect
+1922,gearbox,,,0,Particle Gear Alarm 10min
+1924,gearbox,,forced_outage,1,Particle Gear Alarm 24h
+2000,brake_hydraulics,,,0,Brake pads worn
+2100,brake_hydraulics,,forced_outage,1,Feedback brake 1
+2110,brake_hydraulics,,forced_outage,1,Feedback brake 2
+2125,brake_hydraulics,,,0,Timeout brake closed
+2510,generator,,forced_outage,1,Generator speed implausible
+2550,generator,,,0,Overload generator fan 1
+2600,generator,,,0,High temp. gen. bearing 1
+2605,generator,,forced_outage,1,Max. temp. gen. bearing 1
+2650,generator,,,0,Overload generator fan 2
+2655,generator,,,0,Overload generator fan 3
+2660,generator,,forced_outage,1,Thermistor generator
+2673,generator,,,1,Error measuring temp. stator
+2674,generator,,,0,Overload generator heating
+2810,generator,,forced_outage,1,Service generator brushes
+2900,service,onsite,,0,Manual operation generator heating
+2910,service,onsite,,0,Manual operation generator fan 1
+2920,service,onsite,,0,Manual operation generator fan 2
+2930,service,onsite,,0,Manual operation generator fan 3
+2950,electrical,,,0,Lightning protection defect
+3000,converter,,forced_outage,1,Frequency converter not ready
+3110,converter,,forced_outage,1,Frequency converter error
+3125,grid,,grid,1,Timeout ready for connection
+3130,grid,,grid,1,Timeout grid synchronisation
+3160,electrical,,,0,Cable overload
+3200,converter,,environmental,1,Frequency converter temp. low
+3205,sensors,,,0,PT100 converter inlet temperature defect
+3210,converter,,forced_outage,1,Frequency converter load rejection
+3220,converter,,,0,Reduced power converter
+3260,converter,,,0,Converter power too low
+3265,converter,,,0,Converter torque <> setpoint
+3330,sensors,,forced_outage,1,4-20mA conv. generator speed
+3400,electrical,,,0,UPS warning
+3410,electrical,,forced_outage,1,UPS error
+3420,electrical,,forced_outage,1,UPS buffer time too short
+3500,grid,,grid,1,Grid loss
+3501,grid,,grid,1,Grid disconnection for self-protection
+3532,grid,,grid,1,Min. voltage cut in
+3537,grid,,,0,Transient fault
+3543,grid,,,0,High frequency - P reduction
+3547,grid,,,0,Overfrequency
+3555,electrical,,forced_outage,1,Current asymmetry
+3570,grid,,grid,1,Grid error
+3575,grid,,grid,1,Minimum grid frequency
+3585,grid,,forced_outage,1,Maximum grid frequency
+3590,grid,,grid,1,Overvoltage
+3591,grid,,,0,Transient voltage peak
+3650,electrical,,,1,Power-up relay
+3750,grid,,grid,1,Grid measurement error
+3800,electrical,,forced_outage,1,Circuit breaker
+3805,electrical,,forced_outage,1,Max. transformer temp.
+3820,electrical,,forced_outage,1,Supply circuit breaker off-state
+3830,electrical,,,0,Supply circuit breaker earthed
+3835,yaw,,,0,Cable panel breaker open
+3860,electrical,,,0,Maintenance LV HRC fuse
+3870,electrical,,,0,Overload transformer fan outlet air
+3875,electrical,,,0,Overload transf. fan inlet air
+4000,tower_nacelle,,,0,High temperature nacelle
+4022,sensors,,,0,PT100 nacelle temp. defect
+4215,tower_nacelle,,forced_outage,1,Smoke warning nacelle stop
+4225,tower_nacelle,,,1,Smoke warning tow. base stop
+4500,tower_nacelle,,forced_outage,1,Tower resonance
+4502,tower_nacelle,,,0,Nat. tower freq. implausible
+4510,tower_nacelle,,forced_outage,1,Tower oscillation Y level 1
+4520,tower_nacelle,,forced_outage,1,Tower oscillation X level 1
+4530,tower_nacelle,,forced_outage,1,Tower oscillation Y level 2
+4540,tower_nacelle,,forced_outage,1,Tower oscillation X level 2
+4588,sensors,,forced_outage,1,Oscillation encoder tower
+4600,sensors,,,0,PT100 base box temp. defect
+4607,tower_nacelle,,,0,Heating/fan base box faulty
+5000,tower_nacelle,,,0,Breakdown obstacle light
+5100,tower_nacelle,,,0,Service obstacle light
+5510,brake_hydraulics,,forced_outage,1,Low hydraulic pressure
+5600,brake_hydraulics,,forced_outage,1,Overload hydraulic pump
+5700,brake_hydraulics,,forced_outage,1,Max. operation time hydraulic
+5710,brake_hydraulics,,forced_outage,1,Min. operation time hydraulic
+5720,brake_hydraulics,,,0,Brake accumulator defect
+5730,brake_hydraulics,,,0,Pressure drop hydraulic sys.
+5750,service,onsite,,0,Manual operation hydraulic pump
+5760,brake_hydraulics,,technical_standby,1,Hydraulic oil flushing operation
+6005,yaw,,forced_outage,1,Overload yaw motor 1&3
+6010,yaw,,forced_outage,1,Overload yaw motor 2&4
+6052,yaw,,,0,High yaw motor current
+6054,yaw,,,0,Easy yaw
+6056,yaw,,forced_outage,1,High yaw load
+6111,yaw,,forced_outage,1,Yaw velocity too low
+6120,yaw,,forced_outage,1,Uncontrolled yaw movement
+6130,yaw,,forced_outage,1,Yaw speed high
+6200,yaw,,technical_standby,1,Cable autounwind
+6210,yaw,,forced_outage,1,Max. cable twistangle
+6300,yaw,,forced_outage,1,Yaw error
+6350,yaw,,,0,Check nacelle position!
+6410,service,onsite,,0,Manual yaw
+6432,yaw,,,0,4-20mA yaw current sensor
+6515,sensors,,,0,4-20mA anemometer 1
+6525,sensors,,,0,4-20mA anemometer 2
+6530,sensors,,forced_outage,1,Anemometer defect
+6540,environment,,environmental,1,Icing (anemometer)
+6542,environment,,,0,Reset of icing st. cd. possible
+6620,sensors,,forced_outage,1,Vane defect
+6621,sensors,,,0,Vane 1 defect
+6622,sensors,,,0,Vane 2 defect
+6625,sensors,,forced_outage,1,Check vane!
+6630,sensors,,,0,4-20 mA vane 1
+6635,sensors,,,0,4-20 mA vane 2
+6682,environment,,,0,Icing (dev. electr. power)
+6690,environment,,environmental,1,Icing (stop)
+6750,service,onsite,,0,Man. oper. meteorology heating
+7003,control,,forced_outage,1,Task runtime failure 10 ms
+7008,control,,,0,Reboot necessary after update
+7012,service,,,0,Manual snapshot
+7013,control,,,0,Alarm call test
+7016,control,,,0,Parameter outside limits 
+7018,control,,,0,Parameter update active
+7050,sensors,,,0,PT100 top box defect
+7053,tower_nacelle,,,0,Top box temperature high
+7057,tower_nacelle,,,0,Heating/fan top box faulty
+7324,control,,,0,Check time synchronization
+7325,control,,,0,Time sync. failed (SNTP error)
+7335,control,,forced_outage,1,mconfig.ini check failed
+7415,control,,forced_outage,1,PLC hardware error
+8000,operator,,requested,1,Park master stop
+8105,operator,,,0,Parkmaster operation failed
+8400,control,,,0,Comm. failure FPM
+8402,control,,,0,No assignment to a PMU
+8405,operator,,,0,Fallback setpoints active
+8410,control,,,0,IP duplicate in WF network
+9000,operator,,,0,P output externally reduced
+9210,operator,remote,forced_outage,1,Externally stopped
+9997,control,,,0,Data communication unavailable
+100010,control,,,0,Brake program 200
+100020,control,,,0,Brake program 190
+100030,control,,,0,Brake program 180
+100035,brake_hydraulics,,,0,Brake program 170
+100040,control,,,0,Brake program 75
+100050,control,,,0,Brake program 60
+100060,control,,,0,Brake program 52
+100070,control,,,0,Brake program 50
+100080,control,,,0,Brake program 20
+100100,brake_hydraulics,,,0,Open disc brake
+100110,control,,,0,Bypass limit switches
+100120,service,onsite,,0,Manual operations
+100130,control,,,0,Automatic start-up
+100140,control,,,0,System test 1
+100150,control,,,0,System test 2
+100160,control,,,0,System test 3
+100180,control,,,0,Run-up
+100190,control,,,0,Mains connection
+100200,control,,,0,Mains run-up
+100210,control,,,0,Mains operation

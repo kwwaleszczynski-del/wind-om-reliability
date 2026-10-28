@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wind-om-reliability"
+version = "0.1.0"
+description = "Reliability and O&M analytics from wind turbine status and alarm logs: Pareto of downtime by code and component, MTBF/MTTR, Weibull and Crow-AMSAA trends, bad actors, repeat failures, alarm cascades, resets and service response, lost energy and a monthly KPI pack."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.26",
+    "pandas>=2.1",
+    "pyarrow>=14",
+    "scipy>=1.11",
+    "pyyaml>=6",
+    "openpyxl>=3.1",
+]
+
+[project.optional-dependencies]
+# Lost energy and the log-vs-SCADA check use the methods of the earlier project (not copied).
+scada = [
+    "wind-downtime-availability @ git+https://github.com/kwwaleszczynski-del/wind-downtime-availability@3e29402bd8a216e7e38fe42f2c3d2e21db391c54",
+]
+fetch = ["requests>=2.31"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+wind-om = "wind_om.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+wind_om = ["mappings/*.csv", "configs/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+filterwarnings = ["ignore:The 'generic' unit for NumPy timedelta:DeprecationWarning"]

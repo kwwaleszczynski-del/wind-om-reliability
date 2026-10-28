@@ -1,0 +1,16 @@
+# EXAMPLE ONLY - column names are placeholders, not a Siemens Gamesa specification. An export with a start time
+# and a duration in seconds instead of an end time.
+format: excel
+read: {sheet_name: 0}
+columns:
+  turbine_id: WTG
+  start: Time on
+  code: Code
+  description: Description
+  category: Category
+duration: {column: "Duration [s]", unit: s}
+timezone: Europe/Warsaw
+ambiguous: infer
+stop: {column: Stopping, values: ["1", "Yes", "TRUE"]}
+category_map: {Fault: forced_outage, Maintenance: scheduled_maintenance, Environment: environmental,
+               Grid: grid, External: requested, Info: information}

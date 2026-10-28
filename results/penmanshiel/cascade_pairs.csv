@@ -1,0 +1,68 @@
+primary,primary_text,secondary,secondary_text,count,primary_episodes,confidence,lift
+6530,Anemometer defect,6635,4-20 mA vane 2,43,397,0.10831234256926953,25.507556675062975
+6530,Anemometer defect,6525,4-20mA anemometer 2,42,397,0.10579345088161209,25.402874499925915
+715,Charging circuit pitch,716,Battery charge cycle axis 1 error,41,46,0.8913043478260869,259.87888198757764
+715,Charging circuit pitch,717,Battery charge cycle axis 2 error,41,46,0.8913043478260869,259.87888198757764
+6690,Icing (stop),6682,Icing (dev. electr. power),40,43,0.9302325581395349,284.7906976744186
+8000,Park master stop,8405,Fallback setpoints active,26,233,0.11158798283261803,37.9585121602289
+715,Charging circuit pitch,718,Battery charge cycle axis 3 error,22,46,0.4782608695652174,254.64272211720228
+455,Repeating error BP52,675,Pitch measuring system 1><2,18,47,0.3829787234042553,213.1798839458414
+64,Max. wind speed,4502,Nat. tower freq. implausible,12,2608,0.004601226993865031,4.334355828220859
+3210,Frequency converter load rejection,3537,Transient fault,7,11,0.6363636363636364,599.4545454545455
+6620,Vane defect,6525,4-20mA anemometer 2,6,23,0.2608695652173913,62.63938618925831
+6620,Vane defect,6635,4-20 mA vane 2,6,23,0.2608695652173913,61.43478260869565
+3750,Grid measurement error,3160,Cable overload,5,5,1.0,1749.4285714285716
+3750,Grid measurement error,3205,PT100 converter inlet temperature defect,5,5,1.0,1749.4285714285716
+3750,Grid measurement error,3220,Reduced power converter,5,5,1.0,1749.4285714285716
+3750,Grid measurement error,4600,PT100 base box temp. defect,5,5,1.0,1749.4285714285716
+3575,Minimum grid frequency,8405,Fallback setpoints active,5,6,0.8333333333333334,283.47222222222223
+3532,Min. voltage cut in,8405,Fallback setpoints active,5,29,0.1724137931034483,58.64942528735633
+3500,Grid loss,3547,Overfrequency,5,64,0.078125,86.97443181818181
+3000,Frequency converter not ready,5720,Brake accumulator defect,4,5,0.8,1632.8000000000002
+3750,Grid measurement error,4607,Heating/fan base box faulty,4,5,0.8,1224.6000000000001
+3585,Maximum grid frequency,3547,Overfrequency,3,9,0.3333333333333333,371.09090909090907
+3110,Frequency converter error,3537,Transient fault,3,79,0.0379746835443038,35.77215189873418
+582,Set point><actual value axis 2,712,Battery monitoring axis 2,2,5,0.4,2449.2000000000003
+3585,Maximum grid frequency,3537,Transient fault,2,9,0.2222222222222222,209.33333333333331
+3570,Grid error,1160,Comm.err. IEC client -> CMS drive tr.,2,28,0.07142857142857142,174.94285714285715
+100,Safety chain open,1161,Comm.err. IEC server <- CMS drive tr.,2,29,0.06896551724137931,422.2758620689655
+2100,Feedback brake 1,5720,Brake accumulator defect,1,1,1.0,2041.0
+564,Bladeangle implausible,675,Pitch measuring system 1><2,1,1,1.0,556.6363636363636
+670,Max. pitch speed encoder A,675,Pitch measuring system 1><2,1,1,1.0,556.6363636363636
+583,Set point><actual value axis 3,675,Pitch measuring system 1><2,1,2,0.5,278.3181818181818
+3000,Frequency converter not ready,3160,Cable overload,1,5,0.2,349.8857142857143
+3000,Frequency converter not ready,3205,PT100 converter inlet temperature defect,1,5,0.2,349.8857142857143
+3000,Frequency converter not ready,3220,Reduced power converter,1,5,0.2,349.8857142857143
+3000,Frequency converter not ready,4600,PT100 base box temp. defect,1,5,0.2,349.8857142857143
+3000,Frequency converter not ready,4607,Heating/fan base box faulty,1,5,0.2,306.15000000000003
+582,Set point><actual value axis 2,675,Pitch measuring system 1><2,1,5,0.2,111.32727272727274
+658,Error pitch converter 3,683,Limit switch error 95° axis 3,1,5,0.2,2449.2000000000003
+3590,Overvoltage,1160,Comm.err. IEC client -> CMS drive tr.,1,6,0.16666666666666666,408.2
+3590,Overvoltage,3547,Overfrequency,1,6,0.16666666666666666,185.54545454545453
+60,Wind > power,6525,4-20mA anemometer 2,1,8,0.125,30.01470588235294
+60,Wind > power,6635,4-20 mA vane 2,1,8,0.125,29.4375
+3501,Grid disconnection for self-protection,3537,Transient fault,1,10,0.1,94.2
+3501,Grid disconnection for self-protection,3547,Overfrequency,1,10,0.1,111.32727272727274
+3210,Frequency converter load rejection,1160,Comm.err. IEC client -> CMS drive tr.,1,11,0.09090909090909091,222.65454545454546
+3210,Frequency converter load rejection,3800,Circuit breaker,1,11,0.09090909090909091,1113.2727272727273
+6540,Icing (anemometer),6525,4-20mA anemometer 2,1,25,0.04,9.604705882352942
+6540,Icing (anemometer),6635,4-20 mA vane 2,1,25,0.04,9.42
+455,Repeating error BP52,5720,Brake accumulator defect,1,47,0.02127659574468085,43.42553191489362
+455,Repeating error BP52,720,Pitch batteries charging cycle,1,47,0.02127659574468085,260.5531914893617
+3500,Grid loss,1160,Comm.err. IEC client -> CMS drive tr.,1,64,0.015625,38.26875
+4510,Tower oscillation Y level 1,4502,Nat. tower freq. implausible,1,78,0.01282051282051282,12.076923076923077
+3110,Frequency converter error,3160,Cable overload,1,79,0.012658227848101266,22.144665461121157
+3110,Frequency converter error,3205,PT100 converter inlet temperature defect,1,79,0.012658227848101266,22.144665461121157
+3110,Frequency converter error,3220,Reduced power converter,1,79,0.012658227848101266,22.144665461121157
+3110,Frequency converter error,3547,Overfrequency,1,79,0.012658227848101266,14.092059838895281
+3110,Frequency converter error,4600,PT100 base box temp. defect,1,79,0.012658227848101266,22.144665461121157
+3110,Frequency converter error,4607,Heating/fan base box faulty,1,79,0.012658227848101266,19.376582278481013
+3110,Frequency converter error,716,Battery charge cycle axis 1 error,1,79,0.012658227848101266,3.690777576853526
+3110,Frequency converter error,717,Battery charge cycle axis 2 error,1,79,0.012658227848101266,3.690777576853526
+3110,Frequency converter error,718,Battery charge cycle axis 3 error,1,79,0.012658227848101266,6.739680792515135
+6530,Anemometer defect,4607,Heating/fan base box faulty,1,397,0.0025188916876574307,3.855793450881612
+5760,Hydraulic oil flushing operation,6525,4-20mA anemometer 2,1,928,0.0010775862068965517,0.2587474645030426
+5760,Hydraulic oil flushing operation,6635,4-20 mA vane 2,1,928,0.0010775862068965517,0.25377155172413796
+710,Battery test,4607,Heating/fan base box faulty,1,4554,0.00021958717610891525,0.33613306982872204
+710,Battery test,570,Pitch too slow BP180,1,4554,0.00021958717610891525,2.6890645586297763
+710,Battery test,715,Charging circuit pitch,1,4554,0.00021958717610891525,2.6890645586297763

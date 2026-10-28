@@ -1,0 +1,407 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wind turbine O&amp;M reliability</title>
+<meta name="description" content="Reliability and O&M analytics from the status and alarm logs of three open wind farms: Pareto of downtime by code and component, MTBF/MTTR, Weibull and Crow-AMSAA trends, bad actors, repeat failures, alarm cascades, resets and service response, lost energy.">
+<style>
+:root {
+  color-scheme: light;
+  --page: #f9f9f7; --surface: #fcfcfb; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --ring: rgba(11,11,11,0.10); --accent: #2a78d6;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --hot: #fbe0d4; --vital: #fff3cd;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --accent: #3987e5;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --hot: #4a2618; --vital: #3a3114;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --page: #0d0d0d; --surface: #1a1a19; --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781;
+  --grid: #2c2c2a; --axis: #383835; --ring: rgba(255,255,255,0.10); --accent: #3987e5;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --hot: #4a2618; --vital: #3a3114;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink);
+       font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.7rem; margin: 0 0 6px; }
+h2 { font-size: 1.2rem; margin: 36px 0 6px; }
+h3 { font-size: 1rem; margin: 18px 0 4px; }
+p { color: var(--ink2); margin: 6px 0 12px; max-width: 82ch; }
+a { color: var(--accent); }
+.card { background: var(--surface); border: 1px solid var(--ring); border-radius: 10px; padding: 12px 14px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 14px 0; }
+.tile .v { font-size: 1.45rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.tile .l { color: var(--ink2); font-size: 0.82rem; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; margin: 8px 0 10px; }
+label { font-size: 0.88rem; color: var(--ink2); }
+select { font: inherit; font-size: 0.9rem; padding: 3px 6px; border: 1px solid var(--axis); border-radius: 6px;
+         background: var(--surface); color: var(--ink); }
+table { border-collapse: collapse; width: 100%; font-size: 0.84rem; }
+th, td { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+tr.bad td { background: var(--hot); }
+.scroll { max-height: 360px; overflow: auto; max-width: 100%; }
+.wide { overflow-x: auto; max-width: 100%; }
+.grid2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.grid2 > * { min-width: 0; }
+@media (max-width: 860px) { .grid2 { grid-template-columns: minmax(0, 1fr); } }
+.note { font-size: 0.82rem; color: var(--muted); }
+.plot { width: 100%; min-height: 320px; }
+code, pre { font-family: ui-monospace, Consolas, monospace; font-size: 0.84rem; }
+pre { background: var(--surface); border: 1px solid var(--ring); border-radius: 8px; padding: 10px 12px;
+      overflow-x: auto; }
+footer { margin-top: 40px; font-size: 0.82rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<main>
+<h1>Wind turbine O&amp;M reliability from status and alarm logs</h1>
+<p>What the monthly O&amp;M report and the meeting with the service provider are about, computed from the
+turbines' own event logs: <b>which codes and components cost the most downtime and energy</b>, MTBF and MTTR per
+turbine and component, <b>whether reliability is getting better or worse</b> (Weibull, Crow-AMSAA), bad-actor
+turbines, <b>repeat failures</b>, alarm cascades, automatic resets against interventions and service response
+time. Three open wind farms with two manufacturers: Kelmarsh (6 x Senvion MM92, 2016-2021), Penmanshiel
+(14 x Senvion MM82, 2016-2024) and Hill of Towie (21 x Siemens SWT-2.3-VS-82, 2016-2026).
+Code and method: <a href="https://github.com/kwwaleszczynski-del/wind-om-reliability">github.com/kwwaleszczynski-del/wind-om-reliability</a>.</p>
+
+<div class="controls"><label>Farm <select id="farm"></select></label></div>
+<div class="tiles" id="tiles"></div>
+
+<h2>1. Pareto of downtime</h2>
+<p>Stop hours attributed to the <i>first-up</i> event (overlapping stops are never counted twice), split at
+calendar boundaries. All stop categories: faults, maintenance, grid, curtailment, environment. Lost energy is
+available for the years with 10-minute SCADA.</p>
+<div class="controls">
+  <label>Group by <select id="p-key"><option value="code">status code</option><option value="component">component</option></select></label>
+  <label>Year <select id="p-year"></select></label>
+  <label>Metric <select id="p-metric">
+    <option value="1">stop hours</option><option value="2">stops logged</option>
+    <option value="3">failures caused</option><option value="4">lost energy (MWh)</option></select></label>
+</div>
+<div class="card"><div id="pareto" class="plot" style="min-height:420px"></div>
+<p class="note" id="pareto-note"></p></div>
+
+<h2>2. Failure timeline</h2>
+<p>Every failure (forced-outage stop episode, fleet-wide common causes excluded), one row per turbine. Size: restore
+time; colour: component; diamonds: repeats of the same code within 7 days after restart. Drag to zoom, hover
+for the code.</p>
+<div class="card"><div id="timeline" class="plot" style="min-height:460px"></div></div>
+
+<h2>3. Is reliability improving?</h2>
+<div class="grid2">
+  <div class="card"><h3>Crow-AMSAA (Duane plot)</h3>
+    <div id="duane" class="plot"></div>
+    <p class="note" id="duane-note"></p></div>
+  <div class="card"><h3>Failures per turbine-year</h3>
+    <div id="yearly" class="plot"></div>
+    <p class="note">Calendar years in UTC; partial first and last years.</p></div>
+</div>
+
+<h2>4. Bad actors</h2>
+<div class="grid2">
+  <div class="card"><h3>Jack-knife diagram of status codes</h3>
+    <div id="jack" class="plot"></div>
+    <p class="note">Knights' jack-knife: failures against mean time to restore (log axes). Dashed: mean failures per
+    code and the overall MTTR. Upper right: acute + chronic. Grey curves: equal downtime.</p></div>
+  <div class="card"><h3>MTBF and MTTR per turbine</h3>
+    <div class="scroll" id="mtbf"></div>
+    <p class="note">MTBF = operating hours / failures with a 90 % chi-square interval; MTTR = mean time to restore
+    (first stop to restart, waiting included). Highlighted: more failures than the fleet rate explains
+    (Poisson test, false discovery rate 5 %).</p></div>
+</div>
+
+<h2>5. Repeats, cascades and how failures end</h2>
+<div class="grid2">
+  <div class="card"><h3>Repeat failures (same code within 7 days)</h3><div class="wide" id="repeats"></div>
+    <p class="note">Chance: the repeat rate the code would show from its own frequency alone (Poisson). Far above
+    chance = resets without a fix.</p></div>
+  <div class="card"><h3>Alarm cascades (primary -&gt; secondary within 2 min)</h3><div class="wide" id="cascades"></div>
+    <p class="note">Confidence: share of the primary's episodes that bring the secondary along; lift: how much more
+    often than by chance.</p></div>
+</div>
+<div class="grid2">
+  <div class="card"><h3>How failures were restored</h3><div id="restore" class="plot"></div>
+    <p class="note" id="restore-note"></p></div>
+  <div class="card"><h3>Components: failures per turbine-year and MTTR</h3><div class="wide scroll" id="components"></div></div>
+</div>
+
+<h2>6. Logs against SCADA</h2>
+<p>Do the logged stops match what the 10-minute signals show (the parked-rotor signature of
+<a href="https://github.com/kwwaleszczynski-del/wind-downtime-availability">wind-downtime-availability</a>)? The
+clock check shifts the log against SCADA: a peak away from zero is a time-zone or daylight-saving error.</p>
+<div class="grid2">
+  <div class="card"><h3>Clock check</h3><div id="clock" class="plot"></div></div>
+  <div class="card"><h3>Stop hours per turbine and month</h3><div id="monthly" class="plot"></div></div>
+</div>
+<div class="card"><div class="wide" id="agreement"></div><div class="wide" id="reference"></div>
+<p class="note">Lost energy: expected power from the running neighbours (method of wind-downtime-availability),
+shortfall capped by the logged stop fraction of each 10-minute interval. Greenbyte: the operator platform's
+own lost production to downtime (Kelmarsh, Penmanshiel). Hill of Towie: shutdown hours computed by the operator
+from SCADA and its own logs.</p></div>
+
+<h2>7. Use it on your own logs</h2>
+<p>Any export with turbine, start, end (or duration) and code - a YAML file says which column is which, the time
+zone of the timestamps (Europe/Warsaw with both clock changes handled) and how categories translate; a CSV maps
+codes to components and to on-site / remote roles. Output: a monthly KPI pack in Excel and HTML.
+Example packs: <a href="examples/kpi_penmanshiel_2020-11.html">Penmanshiel, November 2020</a>,
+<a href="examples/kpi_kelmarsh_2021-03.html">Kelmarsh, March 2021</a>,
+<a href="examples/kpi_hill_of_towie_2021-11.html">Hill of Towie, November 2021</a> (Excel versions next to them).</p>
+<pre>pip install "wind-om-reliability[scada] @ git+https://github.com/kwwaleszczynski-del/wind-om-reliability"
+python -m wind_om template alarms.csv --config my_oem.yaml --out my_codes.csv      # codes to map
+python -m wind_om report alarms.csv --config my_oem.yaml --mapping my_codes.csv \
+       --month 2026-09 --tz Europe/Warsaw --out kpi/                             # + --scada for lost MWh</pre>
+
+<footer>Data: Kelmarsh and Penmanshiel wind farm data (Cubico Sustainable Investments, Zenodo, CC BY 4.0); Hill
+of Towie open dataset v2.1.0 (RES, Zenodo 10.5281/zenodo.22662930, CC BY 4.0). Code-to-component mappings were
+written from the public code texts and inferred from SCADA where no text exists; they are working assumptions, not
+OEM documentation. Contract definitions (what counts as a failure, response-time clocks) differ and should be
+checked against the actual contract.</footer>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"
+        integrity="sha384-cCVCZkAjYNxaYKbM8lsArLznDF/SvMFr1jcZrvOpSTCa0W40ZAdLzHCEulnUa5i7" crossorigin="anonymous"></script>
+<script src="data.js"></script>
+<script>
+"use strict";
+const D = window.OM_DATA;
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const COMP = ["pitch", "converter", "gearbox", "generator", "brake_hydraulics", "yaw", "sensors", "control",
+              "electrical", "tower_nacelle", "drivetrain", "grid", "environment", "operator", "service", "unmapped"];
+const PAL = ["#2a78d6", "#eb6834", "#1baf7a", "#8e5cd9", "#d4a017", "#d6457a", "#4bb3c4", "#7a6f5f",
+             "#9cbd3a", "#b55d2e", "#3d5a99", "#c0392b", "#16a085", "#7f8c8d", "#a569bd", "#bdbdbd"];
+const compColor = c => PAL[Math.max(COMP.indexOf(c), 0) % PAL.length];
+const fmt = (v, d = 1) => v === null || v === undefined || Number.isNaN(v) ? "" :
+  Number(v).toLocaleString("en-GB", {maximumFractionDigits: d, minimumFractionDigits: d});
+const pct = v => v === null || v === undefined ? "" : (100 * v).toFixed(1) + " %";
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const CFG = {displaylogo: false, responsive: true, modeBarButtonsToRemove: ["lasso2d", "select2d"]};
+
+function layout(extra) {
+  const ink2 = css("--ink2"), grid = css("--grid");
+  const ax = {gridcolor: grid, zerolinecolor: grid, linecolor: css("--axis"), tickfont: {color: ink2},
+              title: {font: {color: ink2, size: 12}}};
+  const base = {paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)", font: {color: ink2, size: 12},
+                margin: {l: 56, r: 16, t: 10, b: 46}, legend: {orientation: "h", y: -0.2, font: {size: 11}},
+                hoverlabel: {font: {size: 12}}};
+  const out = Object.assign({}, base, extra);
+  out.xaxis = Object.assign({}, ax, extra.xaxis || {});
+  out.yaxis = Object.assign({}, ax, extra.yaxis || {});
+  if (extra.yaxis2) out.yaxis2 = Object.assign({}, ax, extra.yaxis2);
+  return out;
+}
+
+function table(el, cols, rows, opts = {}) {
+  const head = cols.map(c => `<th class="${c[2] ? "n" : ""}">${esc(c[0])}</th>`).join("");
+  const body = rows.map(r => {
+    const cls = opts.bad && opts.bad(r) ? "bad" : "";
+    return `<tr class="${cls}">` + cols.map(c => {
+      const v = c[1](r);
+      return `<td class="${c[2] ? "n" : ""}">${v}</td>`;
+    }).join("") + "</tr>";
+  }).join("");
+  document.getElementById(el).innerHTML = rows.length ?
+    `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>` : "<p class='note'>None.</p>";
+}
+
+const farmSel = document.getElementById("farm");
+Object.keys(D).forEach(k => farmSel.add(new Option(D[k].name, k)));
+farmSel.value = "penmanshiel" in D ? "penmanshiel" : Object.keys(D)[0];
+
+function tiles(f) {
+  const s = f.summary;
+  const rs = s.restoration_shares || {};
+  const t = [
+    [fmt(s.failures_per_turbine_year, 1), "failures per turbine-year"],
+    [fmt(s.mtbf_h, 0) + " h", "MTBF (operating hours)"],
+    [(s.ttr_median_h < 1 ? Math.round(60 * s.ttr_median_h) + " min" : fmt(s.ttr_median_h, 1) + " h") + " / " +
+     fmt(s.mttr_h, 1) + " h", "restore time: median / mean"],
+    [pct(s.repeat_rate), "repeat failures (chance alone: " + pct(s.repeat_rate_chance) + ")"],
+    [pct(rs.auto_reset), "failures cleared by automatic reset"],
+    [fmt(s.response_median_h, 1) + " h", "median time to technician on site"],
+    [fmt(s.crow_beta, 2), "Crow-AMSAA beta (90 % " + fmt(s.crow_beta_lo, 2) + "-" + fmt(s.crow_beta_hi, 2) + "): " + s.trend],
+    [fmt(s.observed_turbine_years, 0), "turbine-years of logs, " + s.failures.toLocaleString("en-GB") + " failures"],
+  ];
+  document.getElementById("tiles").innerHTML = t.map(x =>
+    `<div class="card tile"><div class="v">${x[0]}</div><div class="l">${esc(x[1])}</div></div>`).join("");
+}
+
+function drawPareto(f) {
+  const key = document.getElementById("p-key").value;
+  const yearSel = document.getElementById("p-year");
+  const metric = +document.getElementById("p-metric").value;
+  const rows = (f.pareto[key][yearSel.value] || []).slice();
+  rows.sort((a, b) => (b[metric] ?? -1) - (a[metric] ?? -1));
+  const r = rows.filter(x => x[metric] !== null && x[metric] > 0).slice(0, 20);
+  const tot = rows.reduce((s, x) => s + (x[metric] || 0), 0);
+  let cum = 0;
+  const cumv = r.map(x => (cum += x[metric]) / (tot || 1) * 100);
+  const names = ["stop hours", "stops", "failures", "lost MWh"];
+  const color = key === "component" ? r.map(x => compColor(x[0])) : css("--s1");
+  Plotly.react("pareto", [
+    {type: "bar", x: r.map(x => x[0]), y: r.map(x => x[metric]), marker: {color},
+     hovertemplate: "%{x}<br>%{y:,.1f} " + names[metric - 1] + "<extra></extra>", name: names[metric - 1]},
+    {type: "scatter", mode: "lines+markers", x: r.map(x => x[0]), y: cumv, yaxis: "y2", name: "cumulative %",
+     line: {color: css("--s2"), width: 2}, marker: {size: 5}, hovertemplate: "%{y:.0f} %<extra></extra>"},
+  ], layout({margin: {l: 60, r: 46, t: 10, b: 150}, showlegend: false,
+             xaxis: {tickangle: -40, automargin: true},
+             yaxis: {title: {text: names[metric - 1]}},
+             yaxis2: {overlaying: "y", side: "right", range: [0, 105], ticksuffix: "%", showgrid: false}}), CFG);
+  const top = r.length ? Math.max(1, cumv.findIndex(v => v >= 80) + 1) : 0;
+  document.getElementById("pareto-note").textContent = metric === 4 && !r.length ?
+    "No SCADA for this year: lost energy is computed only for the years with 10-minute data." :
+    `Showing the top ${r.length} of ${rows.length} items with this metric; ${top} of them make 80 % of the shown total. ` +
+    `Lists are cut at the top 25 codes / 20 components per year.`;
+}
+
+function drawTimeline(f) {
+  const rows = f.timeline;
+  const byComp = {};
+  rows.forEach(r => { (byComp[r[5]] = byComp[r[5]] || []).push(r); });
+  const traces = Object.keys(byComp).sort((a, b) => byComp[b].length - byComp[a].length).map(c => ({
+    type: "scattergl", mode: "markers", name: c, x: byComp[c].map(r => r[1]), y: byComp[c].map(r => r[0]),
+    marker: {color: compColor(c), size: byComp[c].map(r => 4 + 3 * Math.log10(1 + 60 * r[2])),
+             symbol: byComp[c].map(r => r[7] ? "diamond" : "circle"), opacity: 0.75,
+             line: {width: 0}},
+    customdata: byComp[c].map(r => [r[3], r[4], fmt(r[2], 2), r[6], r[7] ? "repeat" : ""]),
+    hovertemplate: "%{y} %{x}<br>code %{customdata[0]} %{customdata[1]}<br>restored after %{customdata[2]} h " +
+                   "(%{customdata[3]}) %{customdata[4]}<extra>%{fullData.name}</extra>"}));
+  Plotly.react("timeline", traces, layout({margin: {l: 48, r: 10, t: 10, b: 40},
+    xaxis: {type: "date", rangeslider: {visible: true, thickness: 0.06}},
+    yaxis: {type: "category", categoryorder: "category descending", tickfont: {size: 10}},
+    legend: {orientation: "h", y: -0.32}}), CFG);
+}
+
+function drawTrend(f) {
+  const d = f.duane;
+  const xs = d.map(r => r[0] / 8766), ys = d.map(r => r[1]);
+  const fl = f.crow.fleet, x0 = Math.max(Math.min(...xs), 0.05), x1 = f.crow.total_years;
+  const fx = Array.from({length: 40}, (_, i) => x0 * Math.pow(x1 / x0, i / 39));
+  Plotly.react("duane", [
+    {type: "scatter", mode: "markers", x: xs, y: ys, name: "cumulative failures", marker: {color: css("--s1"), size: 4},
+     hovertemplate: "%{x:.1f} turbine-years<br>%{y} failures<extra></extra>"},
+    {type: "scatter", mode: "lines", x: fx, y: fx.map(x => fl.lam * Math.pow(x * 8766, fl.beta)),
+     name: "power law, beta " + fmt(fl.beta, 2), line: {color: css("--s2"), width: 2},
+     hovertemplate: "fit: %{y:.0f} failures<extra></extra>"},
+  ], layout({showlegend: true, legend: {x: 0.02, y: 0.98, bgcolor: "rgba(0,0,0,0)"},
+             xaxis: {type: "log", title: {text: "cumulative fleet observation (turbine-years)"}},
+             yaxis: {type: "log", title: {text: "cumulative failures"}}}), CFG);
+  const s = f.summary;
+  document.getElementById("duane-note").textContent =
+    `Pooled power-law process over all turbines and observation windows, age from commissioning: beta = ` +
+    `${fmt(s.crow_beta, 2)} (90 % ${fmt(s.crow_beta_lo, 2)}-${fmt(s.crow_beta_hi, 2)}), verdict "${s.trend}"; ` +
+    `Laplace test on the observed-time clock p = ${Number(s.p_laplace).toPrecision(2)}. Weibull shape of the times ` +
+    `between failures ${fmt(s.weibull_shape, 2)} (< 1: failures come in bursts). The line is the same law on the ` +
+    `fleet's cumulative time (beta ${fmt(f.crow.fleet.beta, 2)}, 90 % ${fmt(f.crow.fleet.beta_lo, 2)}-${fmt(f.crow.fleet.beta_hi, 2)}).`;
+  const yc = f.yearly_cols, Y = f.yearly;
+  const iy = yc.indexOf("year"), ir = yc.indexOf("failures_per_turbine_year"), im = yc.indexOf("mttr_h");
+  Plotly.react("yearly", [
+    {type: "bar", x: Y.map(r => r[iy]), y: Y.map(r => r[ir]), marker: {color: css("--s1")}, name: "failures / turbine-year",
+     hovertemplate: "%{x}: %{y:.1f} failures per turbine-year<extra></extra>"},
+    {type: "scatter", mode: "lines+markers", x: Y.map(r => r[iy]), y: Y.map(r => r[im]), yaxis: "y2",
+     name: "MTTR (h, right)", line: {color: css("--s2")}, hovertemplate: "%{x}: MTTR %{y:.1f} h<extra></extra>"},
+  ], layout({xaxis: {dtick: 1}, yaxis: {title: {text: "failures per turbine-year"}},
+             yaxis2: {overlaying: "y", side: "right", title: {text: "MTTR (h)"}, showgrid: false}}), CFG);
+}
+
+function drawJack(f) {
+  const r = f.jack;
+  if (!r.length) { Plotly.purge("jack"); return; }
+  const [nl, tl] = f.jack_limits;
+  const qc = {"acute+chronic": css("--s2"), acute: "#d4a017", chronic: "#8e5cd9", ok: css("--s1")};
+  const nmax = Math.max(...r.map(x => x[1])) * 1.5, tmin = Math.min(...r.map(x => x[2])) / 1.5,
+        tmax = Math.max(...r.map(x => x[2])) * 1.5;
+  const iso = [10, 100, 1000].map(h => ({type: "scatter", mode: "lines", hoverinfo: "skip", showlegend: false,
+    x: [h / tmax, nmax], y: [tmax, h / nmax], line: {color: css("--grid"), width: 1}}));
+  Plotly.react("jack", iso.concat([
+    {type: "scatter", mode: "markers+text", x: r.map(x => x[1]), y: r.map(x => x[2]),
+     text: r.map((x, i) => i < 8 ? x[0] : ""),
+     textposition: "top center", textfont: {size: 9, color: css("--ink2")},
+     marker: {color: r.map(x => qc[x[4]]), size: 8}, showlegend: false,
+     customdata: r.map(x => [f.jack_desc[x[0]] || "", fmt(x[3], 0), x[4]]),
+     hovertext: r.map(x => x[0]),
+     hovertemplate: "code %{hovertext} %{customdata[0]}<br>%{x} failures, MTTR %{y:.2f} h<br>%{customdata[1]} h, " +
+                    "%{customdata[2]}<extra></extra>"},
+  ]), layout({xaxis: {type: "log", title: {text: "failures"}}, yaxis: {type: "log", title: {text: "mean time to restore (h)"}},
+              shapes: [{type: "line", x0: nl, x1: nl, yref: "paper", y0: 0, y1: 1, line: {dash: "dash", color: css("--muted")}},
+                       {type: "line", y0: tl, y1: tl, xref: "paper", x0: 0, x1: 1, line: {dash: "dash", color: css("--muted")}}]}), CFG);
+}
+
+function drawTables(f) {
+  table("mtbf", [["turbine", r => esc(r[0])], ["failures", r => r[1], 1], ["MTBF h", r => fmt(r[2], 0), 1],
+                 ["90 % interval", r => fmt(r[3], 0) + "-" + fmt(r[4], 0), 1], ["MTTR h", r => fmt(r[5], 1), 1],
+                 ["median h", r => fmt(r[6], 2), 1], ["rate / fleet", r => fmt(r[8], 2), 1], ["q", r => r[9] === null ? "" : (r[9] < 0.001 ? "&lt;0.001" : Number(r[9]).toPrecision(2)), 1]],
+        f.mtbf.slice().sort((a, b) => (b[8] || 0) - (a[8] || 0)), {bad: r => r[10]});
+  table("repeats", [["code", r => esc(r[0])], ["text", r => esc(r[1] || "").slice(0, 30)], ["failures", r => r[2], 1],
+                    ["repeats", r => r[3], 1], ["rate", r => pct(r[4]), 1], ["chance", r => pct(r[5]), 1]],
+        f.repeats.slice(0, 10), {bad: r => r[4] - r[5] > 0.2});
+  table("cascades", [["primary", r => esc(r[0] + " " + String(r[1] || "").slice(0, 24))],
+                     ["secondary", r => esc(r[2] + " " + String(r[3] || "").slice(0, 24))], ["n", r => r[4], 1],
+                     ["confidence", r => pct(r[5]), 1], ["lift", r => fmt(r[6], 0), 1]], f.cascades.slice(0, 10));
+  table("components", [["component", r => esc(r[0])], ["failures", r => r[1], 1],
+                       ["per turbine-year", r => fmt(r[2], 2), 1], ["MTBF h", r => fmt(r[3], 0), 1],
+                       ["MTTR h", r => fmt(r[4], 1), 1], ["median h", r => fmt(r[5], 2), 1],
+                       ["downtime h", r => fmt(r[6], 0), 1]], f.components);
+  const rs = f.restoration;
+  const order = ["auto_reset", "remote", "on_site", "not_logged"];
+  const lab = {auto_reset: "automatic reset", remote: "remote stop / reset", on_site: "technician on site",
+               not_logged: "longer, nothing logged"};
+  const rr = order.map(k => rs.find(r => r[0] === k)).filter(Boolean);
+  Plotly.react("restore", [{type: "bar", orientation: "h", y: rr.map(r => lab[r[0]]), x: rr.map(r => 100 * r[4]),
+    marker: {color: [css("--s3"), css("--s1"), css("--s2"), css("--muted")]},
+    customdata: rr.map(r => [r[1], fmt(r[2], 2)]),
+    hovertemplate: "%{y}: %{x:.1f} % of failures (%{customdata[0]})<br>median restore %{customdata[1]} h<extra></extra>"}],
+    layout({margin: {l: 150, r: 16, t: 10, b: 40}, xaxis: {ticksuffix: " %"}, yaxis: {autorange: "reversed"}}), CFG);
+  const on = rs.find(r => r[0] === "on_site");
+  document.getElementById("restore-note").textContent = on ?
+    `Technician on site: median ${fmt(on[5], 1)} h, 90th percentile ${fmt(on[6], 1)} h from failure to the first on-site ` +
+    `event (failures that happened while someone was already there are left out). Automatic reset: restored within 20 min ` +
+    `with nothing logged (Senvion restarts itself after about 15 min).` : "No on-site role in this log.";
+}
+
+function drawScada(f) {
+  if (!f.clock) { ["clock", "monthly"].forEach(Plotly.purge); return; }
+  Plotly.react("clock", [{type: "scatter", mode: "lines+markers", x: f.clock.map(r => r[0]), y: f.clock.map(r => r[1]),
+    line: {color: css("--s1")}, marker: {size: 4}, hovertemplate: "shift %{x:+.2f} h: F1 %{y:.3f}<extra></extra>"}],
+    layout({xaxis: {title: {text: "log shifted by (h)"}, dtick: 1}, yaxis: {title: {text: "F1 of stopped intervals"}}}), CFG);
+  const m = f.monthly;
+  const mx = Math.max(...m.map(r => Math.max(r[2], r[3]))) * 1.05;
+  Plotly.react("monthly", [
+    {type: "scattergl", mode: "markers", x: m.map(r => r[2]), y: m.map(r => r[3]), marker: {color: css("--s1"), size: 5, opacity: 0.6},
+     text: m.map(r => r[1] + " " + r[0]), hovertemplate: "%{text}<br>log %{x:.0f} h, SCADA %{y:.0f} h<extra></extra>"},
+    {type: "scatter", mode: "lines", x: [0, mx], y: [0, mx], line: {color: css("--muted"), dash: "dot"}, hoverinfo: "skip"}],
+    layout({showlegend: false, xaxis: {title: {text: "logged stop hours"}}, yaxis: {title: {text: "SCADA stop hours"}}}), CFG);
+  table("agreement", [["year", r => r[0]], ["precision", r => fmt(r[1], 2), 1], ["recall", r => fmt(r[2], 2), 1],
+                      ["F1", r => fmt(r[3], 2), 1], ["logged stop h", r => fmt(r[4], 0), 1], ["SCADA stop h", r => fmt(r[5], 0), 1]],
+        f.agreement);
+  const rc = f.reference_cols, names = {year: "year", lost_mwh_ours: "lost MWh (this tool)",
+    lost_mwh_greenbyte_downtime: "Greenbyte lost to downtime", lost_mwh_greenbyte_in_logged_stops: "... in logged stops",
+    shutdown_h_operator: "operator shutdown h", stop_h_log: "logged stop h", shutdown_h_operator_in_logged_stops: "... in logged stops",
+    stop_h_without_scada: "logged stop h without SCADA", lost_mwh_greenbyte_without_scada: "Greenbyte MWh where SCADA is empty"};
+  table("reference", rc.map((c, i) => [names[c] || c, r => i === 0 ? r[i] : fmt(r[i], 0), i > 0]), f.reference);
+}
+
+function draw() {
+  const f = D[farmSel.value];
+  tiles(f);
+  const ys = document.getElementById("p-year");
+  const keep = ys.value;
+  ys.innerHTML = "";
+  ys.add(new Option("all years", "all"));
+  f.years.forEach(y => ys.add(new Option(String(y), String(y))));
+  ys.value = [...ys.options].some(o => o.value === keep) ? keep : "all";
+  drawPareto(f); drawTimeline(f); drawTrend(f); drawJack(f); drawTables(f); drawScada(f);
+}
+farmSel.addEventListener("change", draw);
+["p-key", "p-year", "p-metric"].forEach(id => document.getElementById(id).addEventListener("change",
+  () => drawPareto(D[farmSel.value])));
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

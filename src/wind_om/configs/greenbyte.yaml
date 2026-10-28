@@ -1,0 +1,26 @@
+# Status log exported from Greenbyte (Kelmarsh and Penmanshiel open data; one file per turbine there).
+# Timestamps are UTC. Every event has a status (Stop / Warning / Informational / Communication) and the
+# operator's IEC 61400-26 category.
+format: csv
+read: {skiprows: 9, encoding: utf-8-sig}
+columns:
+  turbine_id: turbine_id
+  start: Timestamp start
+  end: Timestamp end
+  code: Code
+  description: Message
+  category: IEC category
+timezone: UTC
+ambiguous: raise
+stop: {column: Status, values: [Stop]}
+category_map:
+  Forced outage: forced_outage
+  Scheduled Maintenance: scheduled_maintenance
+  Planned Corrective Action: planned_corrective
+  Out of Environmental Specification: environmental
+  Out of Electrical Specification: grid
+  Requested Shutdown: requested
+  Technical Standby: technical_standby
+  Full Performance: information
+  Partial Performance: information
+  Communication: communication

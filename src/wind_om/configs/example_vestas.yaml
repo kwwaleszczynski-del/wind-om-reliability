@@ -1,0 +1,17 @@
+# EXAMPLE ONLY - column names are placeholders, not a Vestas specification. Copy, then rename to match the
+# headers of your own alarm export (CSV or Excel) and check a few rows against the controller screen.
+format: csv
+read: {sep: ";", encoding: utf-8-sig}
+columns:
+  turbine_id: Unit
+  start: Detected
+  end: Reset
+  code: Alarm code
+  description: Alarm text
+  category: Alarm type
+timezone: Europe/Warsaw      # local wall-clock time without offset; both DST changes are handled
+ambiguous: infer             # the repeated 02:00-03:00 hour in October, resolved from the file order
+datetime_format: "%d.%m.%Y %H:%M:%S"
+stop: {column: Alarm type, values: [Stop, Fault]}
+category_map: {Fault: forced_outage, Stop: forced_outage, Service: scheduled_maintenance, Weather: environmental,
+               Grid: grid, Curtailment: requested, Warning: information}
