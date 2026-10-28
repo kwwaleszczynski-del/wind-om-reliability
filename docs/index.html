@@ -249,7 +249,7 @@ function drawPareto(f) {
     {type: "scatter", mode: "lines+markers", x: r.map(x => x[0]), y: cumv, yaxis: "y2", name: "cumulative %",
      line: {color: css("--s2"), width: 2}, marker: {size: 5}, hovertemplate: "%{y:.0f} %<extra></extra>"},
   ], layout({margin: {l: 60, r: 46, t: 10, b: 150}, showlegend: false,
-             xaxis: {tickangle: -40, automargin: true},
+             xaxis: {tickangle: -40},
              yaxis: {title: {text: names[metric - 1]}},
              yaxis2: {overlaying: "y", side: "right", range: [0, 105], ticksuffix: "%", showgrid: false}}), CFG);
   const top = r.length ? Math.max(1, cumv.findIndex(v => v >= 80) + 1) : 0;
