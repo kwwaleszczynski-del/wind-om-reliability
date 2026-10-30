@@ -255,6 +255,11 @@ likelihood-ratio test of $`\beta = 1`$. Second opinion: the Laplace test on each
 U = \frac{\sum_i \left(\tau_i - L_{q(i)}/2\right)}{\sqrt{\sum_i L_{q(i)}^2/12}} \sim N(0,1)
 ```
 
+Operating time, MTBF and MTTR with their interval, Crow-AMSAA, the Laplace test and the interval operations
+behind the first-up attribution are computed by
+[res-asset-kpi](https://github.com/kwwaleszczynski-del/res-asset-kpi) (`res_asset_kpi.wind`,
+`res_asset_kpi.intervals`), the KPI library extracted from this and five related projects.
+
 **Bad actors.** Turbine $`j`$ with $`n_j`$ failures in $`T_j`$ operating hours against the fleet rate
 $`r = \sum n / \sum T`$: one-sided p-value $`P(N \ge n_j)`$ for $`N \sim \mathrm{Poisson}(r T_j)`$, adjusted by
 Benjamini-Hochberg across turbines; the same per code and turbine. Jack-knife diagram (Knights, 2001): failures
@@ -328,7 +333,7 @@ src/wind_om/
   mapping.py      code -> component / role / category / stopping
   events.py       open events, episodes, first-up attribution, fleet-wide events, exposure, periods
   pareto.py       Pareto by code / component / category for any period
-  reliability.py  MTBF / MTTR, lognormal, Weibull, Crow-AMSAA, Laplace, bad actors, jack-knife
+  reliability.py  lognormal, Weibull, bad actors, jack-knife; MTBF / MTTR, Crow-AMSAA from res-asset-kpi
   compound.py     repeats, cascades, restoration and response time
   spares.py       expected failures per component, Poisson stock
   scada.py        lost energy, log-vs-SCADA agreement, clock check, code catalogue (uses wind_downtime)

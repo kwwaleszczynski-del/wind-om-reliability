@@ -30,6 +30,9 @@ Usage:
     w = weibull_fit(*tbf(fail, up))
     ca = crow_amsaa(fail, expo, origin={"T1": cod, ...})
     bad = turbine_outliers(fail, up)
+
+Operating time, MTBF/MTTR, Crow-AMSAA and the Laplace test are computed by the res-asset-kpi library
+(``res_asset_kpi.wind``); this module adapts them to the tables of this package and adds the rest.
 """
 from __future__ import annotations
 
@@ -38,12 +41,13 @@ from dataclasses import dataclass
 
 import numpy as np
 import pandas as pd
+from res_asset_kpi import wind
+from res_asset_kpi.wind import HOURS_PER_YEAR, crow_amsaa, laplace_observed, laplace_test  # noqa: F401
 from scipy import optimize, stats
 
-from wind_om.events import NS_H, _ns, subtract
+from wind_om.events import NS_H, _ns
 
 log = logging.getLogger(__name__)
-HOURS_PER_YEAR = 8766.0
 
 
 def failures(ep: pd.DataFrame, exclude_fleet_wide: bool = True, min_duration_h: float = 0.0) -> pd.DataFrame:
@@ -56,62 +60,17 @@ def failures(ep: pd.DataFrame, exclude_fleet_wide: bool = True, min_duration_h: 
 
 def uptime(ep: pd.DataFrame, expo: pd.DataFrame) -> pd.DataFrame:
     """Operating intervals per turbine: observation windows minus all stop episodes (turbine_id, start, end)."""
-    rows = []
-    for tid, w in expo.groupby("turbine_id"):
-        e = ep[ep["turbine_id"] == tid]
-        s, t = subtract(_ns(w["start"]), _ns(w["end"]), _ns(e["start"]), _ns(e["end"]))
-        rows.append(pd.DataFrame({"turbine_id": tid, "a": s, "b": t, "window": _window_of(s, w)}))
-    out = pd.concat(rows, ignore_index=True) if rows else pd.DataFrame(columns=["turbine_id", "a", "b", "window"])
-    out["start"] = pd.to_datetime(out.pop("a").to_numpy(dtype="int64"), utc=True)
-    out["end"] = pd.to_datetime(out.pop("b").to_numpy(dtype="int64"), utc=True)
-    out["hours"] = (out["end"] - out["start"]).dt.total_seconds() / 3600
-    return out
+    return wind.operating_time(expo, ep)[["turbine_id", "window", "start", "end", "hours"]]
 
 
-def _window_of(s: np.ndarray, w: pd.DataFrame) -> np.ndarray:
-    ws = _ns(w["start"].sort_values())
-    return np.searchsorted(ws, s, side="right") - 1
-
-
-def mtbf_ci(hours: float, n: int, conf: float = 0.9) -> tuple[float, float]:
-    """Two-sided chi-square interval of the MTBF for a time-truncated observation."""
-    a = 1 - conf
-    lo = 2 * hours / stats.chi2.ppf(1 - a / 2, 2 * n + 2)
-    hi = 2 * hours / stats.chi2.ppf(a / 2, 2 * n) if n > 0 else np.inf
-    return lo, hi
-
-
-def mtbf_mttr(fail: pd.DataFrame, up: pd.DataFrame, by=("turbine_id",), conf: float = 0.9,
-              n_turbines: int | None = None) -> pd.DataFrame:
+def mtbf_mttr(fail: pd.DataFrame, up: pd.DataFrame, by=("turbine_id",), conf: float = 0.9) -> pd.DataFrame:
     """Failures, operating hours, MTBF (with interval), failure rate and restore-time statistics per group.
 
     Grouping by ``component`` (or anything not tied to a turbine) uses the operating hours of the whole fleet,
     since every turbine carries every component.
     """
-    by = list(by)
-    per_turbine = "turbine_id" in by
-    up_h = up.groupby("turbine_id")["hours"].sum()
-    if per_turbine:
-        keys = fail[by].drop_duplicates() if len(by) > 1 else pd.DataFrame({"turbine_id": up_h.index})
-    else:
-        keys = fail[by].drop_duplicates()
-    rows = []
-    for _, k in keys.iterrows():
-        m = np.ones(len(fail), dtype=bool)
-        for c in by:
-            m &= fail[c].to_numpy() == k[c]
-        f = fail[m]
-        hours = float(up_h.get(k["turbine_id"], 0.0)) if per_turbine else float(up_h.sum())
-        n = len(f)
-        lo, hi = mtbf_ci(hours, n, conf)
-        d = f["duration_h"].to_numpy()
-        rows.append({**{c: k[c] for c in by}, "failures": n, "operating_h": hours,
-                     "mtbf_h": hours / n if n else np.nan, "mtbf_lo_h": lo, "mtbf_hi_h": hi,
-                     "failures_per_turbine_year": n / hours * HOURS_PER_YEAR if hours else np.nan,
-                     "mttr_h": d.mean() if n else np.nan, "ttr_median_h": np.median(d) if n else np.nan,
-                     "ttr_p90_h": np.percentile(d, 90) if n else np.nan, "downtime_h": d.sum()})
-    out = pd.DataFrame(rows)
-    return out.sort_values("downtime_h", ascending=False).reset_index(drop=True) if len(out) else out
+    out = wind.mtbf_mttr(fail, up.groupby("turbine_id")["hours"].sum(), by=list(by), conf=conf)
+    return out.rename(columns={"failures_per_unit_year": "failures_per_turbine_year"})
 
 
 def lognormal_fit(durations_h) -> dict:
@@ -225,146 +184,12 @@ def _root(f, a: float, b: float) -> float:
 
 # ------------------------------------------------------------------------------------------- Crow-AMSAA
 
-@dataclass
-class CrowAMSAA:
-    beta: float
-    lam: float  # per hour**beta
-    beta_lo: float
-    beta_hi: float
-    n: int
-    systems: int
-    p_trend_lr: float  # likelihood ratio test of beta = 1
-    laplace_u: float
-    p_laplace: float
-    hours: float
-
-    @property
-    def verdict(self) -> str:
-        """From the likelihood-ratio test of beta = 1 (5 %); the Laplace test is the model-free second opinion."""
-        if self.n < 5:
-            return "too few failures"
-        if not np.isfinite(self.p_trend_lr):
-            return "no power-law fit"
-        if self.p_trend_lr >= 0.05:
-            return "no significant trend"
-        return "deteriorating" if self.beta > 1 else "improving"
-
-    @property
-    def laplace_agrees(self) -> bool:
-        if self.verdict not in ("improving", "deteriorating") or not np.isfinite(self.p_laplace):
-            return False
-        return self.p_laplace < 0.05 and (self.laplace_u > 0) == (self.beta > 1)
-
-    def intensity(self, age_h) -> np.ndarray:
-        """Failures per hour per turbine at turbine age ``age_h``."""
-        return self.lam * self.beta * np.asarray(age_h, float) ** (self.beta - 1)
-
-    def as_dict(self) -> dict:
-        return {"crow_beta": self.beta, "crow_beta_lo": self.beta_lo, "crow_beta_hi": self.beta_hi,
-                "crow_lambda": self.lam, "failures": self.n, "turbines": self.systems,
-                "observed_turbine_years": self.hours / HOURS_PER_YEAR, "p_trend_lr": self.p_trend_lr,
-                "laplace_u": self.laplace_u, "p_laplace": self.p_laplace, "verdict": self.verdict,
-                "laplace_agrees": self.laplace_agrees}
-
-
-def nhpp_windows(fail: pd.DataFrame, expo: pd.DataFrame, origin=None) -> tuple[np.ndarray, np.ndarray,
-                                                                               np.ndarray, np.ndarray]:
-    """(failure ages, failure window ids, window starts, window ends) in hours of turbine age.
-
-    ``origin``: {turbine_id: Timestamp} (e.g. commissioning dates); turbines without one start at the
-    beginning of their first observation window.
-    """
-    origin = origin or {}
-    ages, wid, ws, we = [], [], [], []
-    k = 0
-    for tid, w in expo.sort_values("start").groupby("turbine_id"):
-        t0 = pd.Timestamp(origin.get(tid, w["start"].min())).value
-        f = _ns(fail.loc[fail["turbine_id"] == tid, "start"])
-        for a, b in zip(_ns(w["start"]), _ns(w["end"])):
-            sel = f[(f >= a) & (f < b)]
-            ws.append(max(a - t0, 0) / NS_H)
-            we.append((b - t0) / NS_H)
-            ages += list((sel - t0) / NS_H)
-            wid += [k] * len(sel)
-            k += 1
-    return np.array(ages, float), np.array(wid, int), np.array(ws, float), np.array(we, float)
-
-
-def _nhpp_loglik(beta, t, S, T):
-    n = len(t)
-    denom = (T**beta - S**beta).sum()
-    lam = n / denom
-    return n * np.log(lam) + n * np.log(beta) + (beta - 1) * np.log(t).sum() - n, lam
-
-
-def crow_amsaa(fail: pd.DataFrame, expo: pd.DataFrame, origin=None, conf: float = 0.9) -> CrowAMSAA:
-    """Power-law NHPP over several turbines and observation windows (maximum likelihood)."""
-    t, _, S, T = nhpp_windows(fail, expo, origin)
-    n = len(t)
-    hours = float((T - S).sum())
-    if n < 3:
-        return CrowAMSAA(np.nan, np.nan, np.nan, np.nan, n, expo["turbine_id"].nunique(), np.nan, np.nan, np.nan,
-                         hours)
-    # ages in units of the oldest window end: beta does not depend on the unit and T**beta stays finite
-    scale = T.max()
-    t, S, T = np.maximum(t, 1e-6) / scale, S / scale, T / scale
-    lt = np.log(t)
-    lS = np.where(S > 0, np.log(np.maximum(S, 1e-300)), 0.0)
-    lT = np.log(T)
-
-    def score(beta):
-        Tb, Sb = T**beta, np.where(S > 0, S**beta, 0.0)
-        return n / beta + lt.sum() - n * (Tb * lT - Sb * lS).sum() / (Tb - Sb).sum()
-
-    beta = _root(score, 1e-4, 20.0)
-    u, p_lap = laplace_observed(fail, expo)
-    if not np.isfinite(beta):
-        log.warning("Crow-AMSAA fit did not converge (%d failures)", n)
-        return CrowAMSAA(np.nan, np.nan, np.nan, np.nan, n, expo["turbine_id"].nunique(), np.nan, u, p_lap, hours)
-    lmax, lam = _nhpp_loglik(beta, t, S, T)
-    cut = stats.chi2.ppf(conf, 1) / 2
-
-    def f(b):
-        return lmax - _nhpp_loglik(b, t, S, T)[0] - cut
-
-    lo = _root(f, 1e-4, beta)
-    hi = _root(f, beta, 20.0)
-    p_lr = float(stats.chi2.sf(2 * (lmax - _nhpp_loglik(1.0, t, S, T)[0]), 1))
-    lam = lam / scale**beta  # back to hours
-    return CrowAMSAA(float(beta), float(lam), float(lo), float(hi), n, expo["turbine_id"].nunique(), p_lr, u,
-                     p_lap, hours)
-
-
-def laplace_observed(fail: pd.DataFrame, expo: pd.DataFrame) -> tuple[float, float]:
-    """Laplace trend test on each turbine's observed-time clock (its windows joined end to end).
-
-    Gaps then shorten the clock instead of splitting it, so the test looks at the long-term trend and not at
-    what happens around each gap (failures often bunch up right before or after an outage of the data link).
-    """
-    taus, spans = [], []
-    for tid, w in expo.sort_values("start").groupby("turbine_id"):
-        a, b = _ns(w["start"]), _ns(w["end"])
-        cum = np.r_[0, np.cumsum(b - a)]
-        f = _ns(fail.loc[fail["turbine_id"] == tid, "start"])
-        k = np.searchsorted(a, f, side="right") - 1
-        ok = (k >= 0) & (f < b[np.clip(k, 0, None)])
-        taus += list((cum[k[ok]] + f[ok] - a[k[ok]]) / NS_H)
-        spans += [cum[-1] / NS_H] * int(ok.sum())
-    return laplace_test(np.array(taus), np.zeros(len(taus)), np.array(spans))
-
-
-def laplace_test(t, S, T) -> tuple[float, float]:
-    """Laplace trend statistic for event times ``t`` each observed in its own window (S, T).
-
-    Under a constant rate every event is uniform in its window; U > 0 means events cluster late (worsening).
-    Two-sided p-value.
-    """
-    t, S, T = (np.asarray(x, float) for x in (t, S, T))
-    if len(t) == 0:
-        return np.nan, np.nan
-    L = T - S
-    u = ((t - (S + L / 2)).sum()) / np.sqrt((L**2).sum() / 12)
-    return float(u), float(2 * stats.norm.sf(abs(u)))
+def crow_amsaa_row(ca: wind.CrowAMSAA) -> dict:
+    """A Crow-AMSAA fit (``crow_amsaa``) as a row of the published tables."""
+    return {"crow_beta": ca.beta, "crow_beta_lo": ca.beta_lo, "crow_beta_hi": ca.beta_hi, "crow_lambda": ca.lam,
+            "failures": ca.failures, "turbines": ca.units, "observed_turbine_years": ca.hours / HOURS_PER_YEAR,
+            "p_trend_lr": ca.p_trend, "laplace_u": ca.laplace_u, "p_laplace": ca.p_laplace, "verdict": ca.verdict,
+            "laplace_agrees": ca.laplace_agrees}
 
 
 def duane_fit(points: pd.DataFrame, total_hours: float) -> dict:

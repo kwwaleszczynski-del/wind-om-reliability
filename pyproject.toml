@@ -7,7 +7,7 @@ name = "wind-om-reliability"
 version = "0.1.0"
 description = "Reliability and O&M analytics from wind turbine status and alarm logs: Pareto of downtime by code and component, MTBF/MTTR, Weibull and Crow-AMSAA trends, bad actors, repeat failures, alarm cascades, resets and service response, lost energy and a monthly KPI pack."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = { text = "MIT" }
 dependencies = [
     "numpy>=1.26",
@@ -16,6 +16,7 @@ dependencies = [
     "scipy>=1.11",
     "pyyaml>=6",
     "openpyxl>=3.1",
+    "res-asset-kpi>=0.1,<0.2",
 ]
 
 [project.optional-dependencies]

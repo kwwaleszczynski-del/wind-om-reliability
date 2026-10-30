@@ -20,14 +20,17 @@ Usage:
     ep = flag_fleet_wide(ep, n_turbines=6)
     exp = exposure(ev, t0, t1)              # turbine_id, start, end
     hours = overlap_hours(seg["start"], seg["end"], a, b)
+
+The interval operations (union, difference, first-up attribution, overlap) are those of the res-asset-kpi
+library (``res_asset_kpi.intervals``).
 """
 from __future__ import annotations
 
-import heapq
 import logging
 
 import numpy as np
 import pandas as pd
+from res_asset_kpi.intervals import first_up, overlap_hours, subtract, union  # noqa: F401
 
 from wind_om.schema import FAILURE_CATEGORIES
 
@@ -68,30 +71,6 @@ def close_events(df: pd.DataFrame, window_end=None, max_open=None) -> pd.DataFra
     return out
 
 
-def _attribute(starts: np.ndarray, ends: np.ndarray) -> list[tuple[int, int, int]]:
-    """First-up attribution of the union of [start, end) intervals sorted by start: (a, b, owner) segments."""
-    bounds = np.unique(np.concatenate([starts, ends]))
-    heap: list[int] = []
-    out: list[tuple[int, int, int]] = []
-    j, n = 0, len(starts)
-    for k in range(len(bounds) - 1):
-        b = bounds[k]
-        while j < n and starts[j] <= b:
-            if ends[j] > starts[j]:
-                heapq.heappush(heap, j)
-            j += 1
-        while heap and ends[heap[0]] <= b:
-            heapq.heappop(heap)
-        if not heap:
-            continue
-        owner = heap[0]
-        if out and out[-1][2] == owner and out[-1][1] == b:
-            out[-1] = (out[-1][0], int(bounds[k + 1]), owner)
-        else:
-            out.append((int(b), int(bounds[k + 1]), owner))
-    return out
-
-
 def episodes(df: pd.DataFrame, merge_gap=MERGE_GAP,
              failure_categories=FAILURE_CATEGORIES) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Stops -> (episodes, attributed segments). ``df`` must have closed ends (``close_events``).
@@ -110,13 +89,13 @@ def episodes(df: pd.DataFrame, merge_gap=MERGE_GAP,
     eid = 0
     for tid, g in st.sort_values(["turbine_id", "start", "seq"], kind="stable").groupby("turbine_id", sort=True):
         s, e, idx = _ns(g["start"]), _ns(g["end"]), g.index.to_numpy()
-        segs = _attribute(s, e)
+        segs = first_up(s, e)
+        own = segs["owner"].to_numpy()
         # episodes: union with the merge gap
         run_end = np.maximum.accumulate(e)
         new = np.r_[True, s[1:] > run_end[:-1] + gap]
         ep_of = np.cumsum(new) - 1 + eid
-        seg_ep = ep_of[[o for _, _, o in segs]]
-        for (a, b, o), ep in zip(segs, seg_ep):
+        for a, b, o, ep in zip(_ns(segs["start"]), _ns(segs["end"]), own, ep_of[own]):
             seg_rows.append((tid, a, b, idx[o], ep))
         for k in np.unique(ep_of):
             m = ep_of == k
@@ -181,45 +160,6 @@ def flag_fleet_wide(ep: pd.DataFrame, n_turbines: int, window="5min", min_share:
 
 
 # ------------------------------------------------------------------------------------- interval arithmetic
-
-def union(starts: np.ndarray, ends: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Union of [start, end) intervals (int64 ns), sorted and merged."""
-    if len(starts) == 0:
-        return np.array([], dtype="int64"), np.array([], dtype="int64")
-    o = np.argsort(starts, kind="stable")
-    s, e = np.asarray(starts)[o], np.asarray(ends)[o]
-    run_end = np.maximum.accumulate(e)
-    new = np.r_[True, s[1:] > run_end[:-1]]
-    last = np.r_[np.flatnonzero(new)[1:] - 1, len(s) - 1]  # the running max at a group's last member is its end
-    return s[new], run_end[last]
-
-
-def subtract(a_s, a_e, b_s, b_e) -> tuple[np.ndarray, np.ndarray]:
-    """Intervals A minus the union of intervals B (all int64 ns)."""
-    b_s, b_e = union(np.asarray(b_s), np.asarray(b_e))
-    out_s, out_e = [], []
-    for s, e in zip(a_s, a_e):
-        cur = s
-        k0 = np.searchsorted(b_e, s, side="right")
-        for k in range(k0, len(b_s)):
-            if b_s[k] >= e:
-                break
-            if b_s[k] > cur:
-                out_s.append(cur)
-                out_e.append(b_s[k])
-            cur = max(cur, b_e[k])
-        if cur < e:
-            out_s.append(cur)
-            out_e.append(e)
-    return np.array(out_s, dtype="int64"), np.array(out_e, dtype="int64")
-
-
-def overlap_hours(starts, ends, a, b) -> np.ndarray:
-    """Hours of each [start, end) inside [a, b)."""
-    s, e = _ns(starts), _ns(ends)
-    a, b = pd.Timestamp(a).value, pd.Timestamp(b).value
-    return np.clip(np.minimum(e, b) - np.maximum(s, a), 0, None) / NS_H
-
 
 def exposure(ev: pd.DataFrame, t0, t1, coverage: pd.DataFrame | None = None,
              gaps_from_log: bool = True, min_gap="6h", max_silence=None) -> pd.DataFrame:

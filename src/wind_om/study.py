@@ -100,14 +100,14 @@ def full_tables(a: Analysis) -> tuple[dict, dict]:
         if n >= 20:
             wb.append({"group": c, **R.weibull_fit(*R.tbf(a.fail, a.up, group=("component", c))).as_dict()})
     t["weibull"] = pd.DataFrame(wb)
-    ca = [{"group": "fleet", **R.crow_amsaa(a.fail, a.expo, a.origin).as_dict()}]
+    ca = [{"group": "fleet", **R.crow_amsaa_row(R.crow_amsaa(a.fail, a.expo, a.origin))}]
     for tid in a.turbines:
-        ca.append({"group": tid, **R.crow_amsaa(a.fail[a.fail["turbine_id"] == tid],
-                                                a.expo[a.expo["turbine_id"] == tid], a.origin).as_dict()})
+        ca.append({"group": tid, **R.crow_amsaa_row(R.crow_amsaa(a.fail[a.fail["turbine_id"] == tid],
+                                                                 a.expo[a.expo["turbine_id"] == tid], a.origin))})
     for c, n in a.fail["component"].value_counts().items():
         if n >= 10:
-            ca.append({"group": f"component:{c}", **R.crow_amsaa(a.fail[a.fail["component"] == c], a.expo,
-                                                                 a.origin).as_dict()})
+            ca.append({"group": f"component:{c}", **R.crow_amsaa_row(R.crow_amsaa(a.fail[a.fail["component"] == c],
+                                                                                  a.expo, a.origin))})
     t["crow_amsaa"] = pd.DataFrame(ca)
     fw = a.ep[a.ep["fleet_wide"]]
     t["fleet_wide"] = (fw.groupby("fleet_group").agg(start=("start", "min"), turbines=("turbine_id", "nunique"),
