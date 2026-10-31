@@ -248,8 +248,12 @@ function drawPareto(f) {
      hovertemplate: "%{x}<br>%{y:,.1f} " + names[metric - 1] + "<extra></extra>", name: names[metric - 1]},
     {type: "scatter", mode: "lines+markers", x: r.map(x => x[0]), y: cumv, yaxis: "y2", name: "cumulative %",
      line: {color: css("--s2"), width: 2}, marker: {size: 5}, hovertemplate: "%{y:.0f} %<extra></extra>"},
-  ], layout({margin: {l: 60, r: 46, t: 10, b: 150}, showlegend: false,
-             xaxis: {tickangle: -40},
+  ], layout({margin: {l: 60, r: 46, t: 10, b: 170}, showlegend: false,
+             // vertical, shortened tick labels: long code texts at an angle ran into each other and off the left edge
+             // codes without a text ("1020 ") would otherwise make Plotly draw a numeric axis
+             xaxis: {type: "category", tickangle: -90, tickvals: r.map(x => x[0]),
+                     ticktext: r.map(x => x[0].length > 26 ? x[0].slice(0, 25) + "…" : x[0]),
+                     tickfont: {size: innerWidth < 600 ? 9 : 11}},
              yaxis: {title: {text: names[metric - 1]}},
              yaxis2: {overlaying: "y", side: "right", range: [0, 105], ticksuffix: "%", showgrid: false}}), CFG);
   const top = r.length ? Math.max(1, cumv.findIndex(v => v >= 80) + 1) : 0;
@@ -271,10 +275,12 @@ function drawTimeline(f) {
     customdata: byComp[c].map(r => [r[3], r[4], fmt(r[2], 2), r[6], r[7] ? "repeat" : ""]),
     hovertemplate: "%{y} %{x}<br>code %{customdata[0]} %{customdata[1]}<br>restored after %{customdata[2]} h " +
                    "(%{customdata[3]}) %{customdata[4]}<extra>%{fullData.name}</extra>"}));
-  Plotly.react("timeline", traces, layout({margin: {l: 48, r: 10, t: 10, b: 40},
+  // on a phone the component legend wraps into several rows: give it its own space below the range slider
+  const narrow = innerWidth < 600;
+  Plotly.react("timeline", traces, layout({margin: {l: 48, r: 10, t: 10, b: narrow ? 170 : 40},
     xaxis: {type: "date", rangeslider: {visible: true, thickness: 0.06}},
     yaxis: {type: "category", categoryorder: "category descending", tickfont: {size: 10}},
-    legend: {orientation: "h", y: -0.32}}), CFG);
+    legend: narrow ? {orientation: "h", yanchor: "top", y: -0.2, font: {size: 9}} : {orientation: "h", y: -0.32}}), CFG);
 }
 
 function drawTrend(f) {
@@ -288,8 +294,8 @@ function drawTrend(f) {
     {type: "scatter", mode: "lines", x: fx, y: fx.map(x => fl.lam * Math.pow(x * 8766, fl.beta)),
      name: "power law, beta " + fmt(fl.beta, 2), line: {color: css("--s2"), width: 2},
      hovertemplate: "fit: %{y:.0f} failures<extra></extra>"},
-  ], layout({showlegend: true, legend: {x: 0.02, y: 0.98, bgcolor: "rgba(0,0,0,0)"},
-             xaxis: {type: "log", title: {text: "cumulative fleet observation (turbine-years)"}},
+  ], layout({showlegend: true, margin: {l: 56, r: 16, t: 10, b: 72}, legend: {orientation: "h", y: -0.3},
+             xaxis: {type: "log", title: {text: "cumulative fleet turbine-years"}},
              yaxis: {type: "log", title: {text: "cumulative failures"}}}), CFG);
   const s = f.summary;
   document.getElementById("duane-note").textContent =
@@ -305,7 +311,7 @@ function drawTrend(f) {
      hovertemplate: "%{x}: %{y:.1f} failures per turbine-year<extra></extra>"},
     {type: "scatter", mode: "lines+markers", x: Y.map(r => r[iy]), y: Y.map(r => r[im]), yaxis: "y2",
      name: "MTTR (h, right)", line: {color: css("--s2")}, hovertemplate: "%{x}: MTTR %{y:.1f} h<extra></extra>"},
-  ], layout({xaxis: {dtick: 1}, yaxis: {title: {text: "failures per turbine-year"}},
+  ], layout({margin: {l: 56, r: 56, t: 10, b: 46}, xaxis: {dtick: 1}, yaxis: {title: {text: "failures per turbine-year"}},
              yaxis2: {overlaying: "y", side: "right", title: {text: "MTTR (h)"}, showgrid: false}}), CFG);
 }
 
@@ -320,8 +326,10 @@ function drawJack(f) {
     x: [h / tmax, nmax], y: [tmax, h / nmax], line: {color: css("--grid"), width: 1}}));
   Plotly.react("jack", iso.concat([
     {type: "scatter", mode: "markers+text", x: r.map(x => x[1]), y: r.map(x => x[2]),
-     text: r.map((x, i) => i < 8 ? x[0] : ""),
-     textposition: "top center", textfont: {size: 9, color: css("--ink2")},
+     text: r.map((x, i) => i < (innerWidth < 600 ? 5 : 8) ? x[0] : ""),
+     // alternate the label side so neighbouring codes do not print on top of each other
+     textposition: r.map((x, i) => ["top center", "bottom center", "middle right", "middle left"][i % 4]),
+     textfont: {size: 9, color: css("--ink2")},
      marker: {color: r.map(x => qc[x[4]]), size: 8}, showlegend: false,
      customdata: r.map(x => [f.jack_desc[x[0]] || "", fmt(x[3], 0), x[4]]),
      hovertext: r.map(x => x[0]),
