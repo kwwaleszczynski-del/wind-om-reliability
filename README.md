@@ -49,13 +49,20 @@ What it computes, per farm, turbine, component, code and month:
 | Codes making 80 % of all stop hours (of codes with downtime) | 7 of 69 | 16 of 99 | 21 of 101 |
 | Repeat failures within 7 days (expected by chance) | 18 % (1.6 %) | 43 % (3.5 %) | 33 % (1.6 %) |
 | Weibull shape of times between failures (90 % interval) | 0.40 (0.36-0.45) | 0.37 (0.36-0.39) | 0.44 (0.42-0.45) |
-| Crow-AMSAA beta (90 % interval) | 0.82 (0.74-0.91) | 1.12 (1.08-1.16) | 0.44 (0.34-0.55) |
+| Crow-AMSAA beta (90 % interval)¹ | 0.82 (0.74-0.91) | 1.12 (1.08-1.16) | 0.44 (0.34-0.55) |
 | Trend (likelihood-ratio test; Laplace test agrees) | **improving** | **deteriorating** | **improving** |
 | Cleared by automatic reset / technician on site | 52 % / 19 % | 40 % / 16 % | 34 % / no on-site codes |
 | Time to technician on site: median / 90th percentile | 15.7 h / 72 h | 12.9 h / 45 h | not in the log |
 | Bad-actor turbines (Poisson test, FDR 5 %) | none | T12, T11, T08, T02 | T06, T14 |
 | Logged vs SCADA-detected stops, F1 of 10-min intervals (weighted by stop hours) | 0.82 (2016-2021) | 0.86 (2018, 2020) | 0.88 (2021) |
 | Clock check: best shift of the log against SCADA | 0 h | 0 h | 0 h |
+
+¹ Crow-AMSAA fits the 261 / 1,997 / 1,611 failures that start inside the observation windows
+(`results/<farm>/crow_amsaa.csv`). The other 6 at Kelmarsh and 16 at Penmanshiel start during a data-link outage
+of 6 hours or more, which is cut out of the observation time, or at the very edge of a window: the controller
+kept its own log while the link was down. The failure counts, rates and MTBF above include them, so the rates
+are slightly higher and the MTBF slightly lower than an exposure-consistent count would give (6 of 267 and 16 of
+2,013 failures).
 
 **1. A handful of codes carries the downtime, and they are rarely the frequent ones.** At Kelmarsh 7 of 69
 codes make 80 % of all stop hours: on-site manual stops (28 %), a single 82-day "emergency stop top box" (14 %),
@@ -105,7 +112,11 @@ without any SCADA row - at Penmanshiel 4.6 GWh in 2020 alone, most of it the 15-
 September-October.
 Where SCADA exists the two differ by +5 % (Kelmarsh) and +10 % (Penmanshiel; this tool also prices the
 requested and environmental stops). The tool reports the stop hours it
-cannot price instead of guessing them.
+cannot price instead of guessing them. Kelmarsh's lost energy has other scopes in two related projects:
+[wind-power-curve-kelmarsh](https://github.com/kwwaleszczynski-del/wind-power-curve-kelmarsh) prices the
+non-normal *SCADA states* from commissioning (stops, grid and park stops, curtailment, icing) at 3.1 GWh, and
+[wind-downtime-availability](https://github.com/kwwaleszczynski-del/wind-downtime-availability) only the logged
+stops of its test years 2020-2021 at 1.85-1.96 GWh; none of the three prices the stops without SCADA rows.
 
 **8. Hill of Towie: a log without a dictionary.** Only 12 alarm codes are described (low and high wind, icing,
 cable untwisting, pitch lubrication). From one year of SCADA (2021) the tool infers which of the other codes
