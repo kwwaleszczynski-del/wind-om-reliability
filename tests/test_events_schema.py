@@ -39,6 +39,8 @@ def test_overlaps_attributed_once_to_first_up():
     assert len(ep) == 2
     first = ep.iloc[0]
     assert first["duration_h"] == pytest.approx(8.5) and first["stop_h"] == pytest.approx(8 + 25 / 60)
+    # the fault time leaves out the service stop that follows the fault (4 h)
+    assert first["fault_h"] == pytest.approx(4 + 25 / 60)
     # a fault was the reason at some moment: failure episode, caused by the fault, not by the service stop
     assert bool(first["failure"]) and first["code"] == "fault1" and first["n_events"] == 4
 

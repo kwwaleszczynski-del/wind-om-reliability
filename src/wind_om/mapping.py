@@ -91,13 +91,15 @@ def shipped_mappings() -> list[str]:
 
 
 def apply_mapping(df: pd.DataFrame, mapping: pd.DataFrame | None, default_stop: bool = False) -> pd.DataFrame:
-    """Add ``component`` and ``role``; fill unknown categories and missing stop flags from the mapping."""
+    """Add ``component``, ``role`` and ``mapped`` (the code is in the mapping); fill unknown categories and missing
+    stop flags from the mapping."""
     out = df.copy()
     if mapping is None or mapping.empty:
-        out["component"], out["role"] = "unmapped", ""
+        out["component"], out["role"], out["mapped"] = "unmapped", "", False
         out["stop"] = out["stop"].fillna(default_stop).astype(bool)
         return out
     m = mapping.set_index("code")
+    out["mapped"] = out["code"].isin(m.index)
     comp = out["code"].map(m["component"]).replace("", pd.NA)
     out["component"] = comp.fillna("unmapped").astype(str)
     out["role"] = out["code"].map(m["role"]).fillna("").astype(str)

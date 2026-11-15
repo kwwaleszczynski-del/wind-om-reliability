@@ -3,13 +3,20 @@ bad actors.
 
 Definitions used throughout:
 
-* **Failure** - a stop episode in which a stop of a failure category (``schema.FAILURE_CATEGORIES``, forced
-  outage by default) was at some moment the reason the turbine stood still, not flagged fleet-wide (a common
-  cause such as a grid loss is not a turbine failure).
+* **Failure** (in the tables; "forced-outage stop episode" in the reports) - a stop episode in which a stop of a
+  failure category (``schema.FAILURE_CATEGORIES``, forced outage by default) was at some moment the reason the
+  turbine stood still, not flagged fleet-wide (a common cause such as a grid loss is not a turbine failure).
+  The count depends on the merge gap of the episodes and on what counts as a common cause; ``study.sensitivity``
+  shows by how much.
+* **Repeat chains** - consecutive failures of one code on one turbine within the repeat window
+  (``compound.repeats``). ``decluster`` keeps the first failure of each chain: the trend and the bad-actor tests
+  run on chains, because repeats are not independent events.
 * **Operating time** - observation time minus all stop time (failures cannot start while stopped).
-* **MTBF** - operating hours / failures, with a two-sided chi-square interval for a time-truncated test.
-* **MTTR** - mean time to *restore*: from the first stop of the episode to the restart, so it includes waiting,
-  travel and logistics, not only hands-on repair time.
+* **MTBF** - operating hours / failures, with a two-sided chi-square interval for a time-truncated test (it
+  assumes independent failures; ``mtbf_bootstrap`` gives the interval that does not).
+* **MTTR** - mean time down for the fault: the attributed hours of the episode's failure-category stops
+  (``fault_h``), waiting, travel and logistics included; maintenance done in the same stop after the fault and
+  uncategorised stops are left out (they are in the episode duration).
 * **Weibull** - fitted by maximum likelihood to the operating times between failures of each turbine (a renewal
   view); the last interval of every observation window is right-censored, the first is dropped (its start is
   unknown). Shape < 1: early failures / repeats, ~1: random, > 1: wear-out.
@@ -18,10 +25,11 @@ Definitions used throughout:
   their observation windows (gaps and late starts handled exactly). ``beta < 1``: failures thin out
   (reliability improves), ``beta > 1``: they become more frequent. The verdict comes from the likelihood-ratio
   test of beta = 1; the Laplace test on each turbine's observed-time clock is a model-free second opinion
-  (it does not depend on the age origin).
-* **Bad actors** - turbines (and code x turbine pairs) with more failures than the fleet rate explains
+  (it does not depend on the age origin). ``trend`` fits the de-clustered failures and resamples whole
+  turbines: the verdict needs the bootstrap interval of beta to lie on one side of 1.
+* **Bad actors** - turbines (and code x turbine pairs) with more repeat chains than the fleet rate explains
   (exact Poisson test, Benjamini-Hochberg false discovery rate), and the jack-knife diagram of Knights (2001):
-  frequency against mean repair time, with acute, chronic and acute + chronic quadrants.
+  frequency against mean time down, with acute, chronic and acute + chronic quadrants.
 
 Usage:
     fail = failures(ep)
@@ -63,14 +71,87 @@ def uptime(ep: pd.DataFrame, expo: pd.DataFrame) -> pd.DataFrame:
     return wind.operating_time(expo, ep)[["turbine_id", "window", "start", "end", "hours"]]
 
 
+def restore_h(fail: pd.DataFrame) -> pd.Series:
+    """Time down for the fault per failure: ``fault_h`` when the episodes carry it, else the episode duration."""
+    return fail["fault_h"] if "fault_h" in fail else fail["duration_h"]
+
+
 def mtbf_mttr(fail: pd.DataFrame, up: pd.DataFrame, by=("turbine_id",), conf: float = 0.9) -> pd.DataFrame:
     """Failures, operating hours, MTBF (with interval), failure rate and restore-time statistics per group.
 
+    Restore times are the fault times (``restore_h``); ``episode_h`` is the mean episode duration.
     Grouping by ``component`` (or anything not tied to a turbine) uses the operating hours of the whole fleet,
     since every turbine carries every component.
     """
-    out = wind.mtbf_mttr(fail, up.groupby("turbine_id")["hours"].sum(), by=list(by), conf=conf)
+    by = list(by)
+    out = wind.mtbf_mttr(fail.assign(duration_h=restore_h(fail)), up.groupby("turbine_id")["hours"].sum(),
+                         by=by, conf=conf)
+    if len(fail) and len(out):
+        out = out.merge(fail.groupby(by)["duration_h"].mean().rename("episode_h").reset_index(), on=by, how="left")
     return out.rename(columns={"failures_per_unit_year": "failures_per_turbine_year"})
+
+
+def decluster(rep: pd.DataFrame) -> pd.DataFrame:
+    """The first failure of every repeat chain (``compound.repeats`` output); other tables pass through."""
+    return rep[rep["chain_pos"] == 0] if "chain_pos" in rep else rep
+
+
+def turbine_bootstrap(fail: pd.DataFrame, expo: pd.DataFrame, stat, n_boot: int = 500, seed: int = 0,
+                      conf: float = 0.9, origin=None) -> tuple[float, float]:
+    """Percentile interval of ``stat(fail, expo, origin)`` over fleets resampled turbine by turbine.
+
+    Failures of one turbine are not independent (repeats, a weak turbine); resampling whole turbines keeps that
+    dependence, so the interval is honest where the analytic ones (chi-square, profile likelihood) are too narrow.
+    """
+    rng = np.random.default_rng(seed)
+    tids = np.array(sorted(expo["turbine_id"].unique()))
+    f_by = dict(tuple(fail.groupby("turbine_id")))
+    e_by = dict(tuple(expo.groupby("turbine_id")))
+    empty = fail.iloc[:0]
+    vals = []
+    for _ in range(n_boot):
+        pick = rng.choice(tids, len(tids))
+        ff = pd.concat([f_by.get(t, empty).assign(turbine_id=f"b{k}") for k, t in enumerate(pick)])
+        ee = pd.concat([e_by[t].assign(turbine_id=f"b{k}") for k, t in enumerate(pick)])
+        org = {f"b{k}": origin[t] for k, t in enumerate(pick) if t in origin} if origin else None
+        vals.append(stat(ff, ee, org))
+    a = (1 - conf) / 2
+    lo, hi = np.nanpercentile(np.asarray(vals, float), [100 * a, 100 * (1 - a)])
+    return float(lo), float(hi)
+
+
+def trend(rep: pd.DataFrame, expo: pd.DataFrame, origin=None, n_boot: int = 500, seed: int = 0) -> dict:
+    """Crow-AMSAA on all failures and on de-clustered failures, with a turbine-bootstrap interval of the latter.
+
+    Verdict: ``improving`` / ``deteriorating`` when the 90 % bootstrap interval of the de-clustered beta lies
+    below / above 1, else ``no clear trend``.
+    """
+    raw = crow_amsaa(rep, expo, origin)
+    dec_f = decluster(rep)
+    dec = crow_amsaa(dec_f, expo, origin)
+
+    def beta(f, e, o):
+        return crow_amsaa(f, e, o).beta if len(f) >= 5 else np.nan
+
+    enough = len(dec_f) >= 5
+    lo, hi = turbine_bootstrap(dec_f, expo, beta, n_boot, seed, origin=origin) if enough else (np.nan, np.nan)
+    verdict = ("too few failures" if not enough else "improving" if hi < 1 else
+               "deteriorating" if lo > 1 else "no clear trend")
+    return {"beta_all": raw.beta, "beta_all_lo": raw.beta_lo, "beta_all_hi": raw.beta_hi, "p_all": raw.p_trend,
+            "failures_all": raw.failures, "beta": dec.beta, "beta_lo": dec.beta_lo, "beta_hi": dec.beta_hi,
+            "p_trend": dec.p_trend, "p_laplace": dec.p_laplace, "failures": dec.failures,
+            "beta_boot_lo": lo, "beta_boot_hi": hi, "verdict": verdict}
+
+
+def mtbf_bootstrap(fail: pd.DataFrame, up: pd.DataFrame, n_boot: int = 2000, seed: int = 0) -> tuple[float, float]:
+    """Turbine-bootstrap 90 % interval of the fleet MTBF (operating hours / failures)."""
+    h = up.groupby("turbine_id")["hours"].sum()
+    n = fail.groupby("turbine_id").size().reindex(h.index, fill_value=0)
+    k = np.random.default_rng(seed).integers(0, len(h), size=(n_boot, len(h)))
+    hs, ns = h.to_numpy()[k].sum(1), n.to_numpy()[k].sum(1)
+    m = np.where(ns > 0, hs / np.maximum(ns, 1), np.nan)
+    lo, hi = np.nanpercentile(m, [5, 95])
+    return float(lo), float(hi)
 
 
 def lognormal_fit(durations_h) -> dict:
@@ -235,15 +316,21 @@ def bh(p) -> np.ndarray:
 
 
 def turbine_outliers(fail: pd.DataFrame, up: pd.DataFrame, alpha: float = 0.05) -> pd.DataFrame:
-    """Turbines with more failures than the fleet rate explains (one-sided exact Poisson test, BH-adjusted)."""
+    """Turbines with more failures than the fleet rate explains (one-sided exact Poisson test, BH-adjusted).
+
+    With the repeat columns of ``compound.repeats`` the test counts repeat chains (``chains``), not every
+    failure: a reset without a fix repeats the same event, and counting each repeat would make the Poisson test
+    far too confident (turbine-year counts of failures are strongly over-dispersed).
+    """
     h = up.groupby("turbine_id")["hours"].sum()
-    n = fail.groupby("turbine_id").size().reindex(h.index, fill_value=0)
+    n_all = fail.groupby("turbine_id").size().reindex(h.index, fill_value=0)
+    n = decluster(fail).groupby("turbine_id").size().reindex(h.index, fill_value=0)
     rate = n.sum() / h.sum() if h.sum() else np.nan
     exp_n = rate * h
     p = stats.poisson.sf(n - 1, exp_n)
-    dt = fail.groupby("turbine_id")["duration_h"].sum().reindex(h.index, fill_value=0)
-    out = pd.DataFrame({"turbine_id": h.index, "failures": n.to_numpy(), "expected": exp_n.to_numpy(),
-                        "ratio": (n / exp_n).to_numpy(), "p": p, "q": bh(p),
+    dt = restore_h(fail).groupby(fail["turbine_id"]).sum().reindex(h.index, fill_value=0)
+    out = pd.DataFrame({"turbine_id": h.index, "failures": n_all.to_numpy(), "chains": n.to_numpy(),
+                        "expected": exp_n.to_numpy(), "ratio": (n / exp_n).to_numpy(), "p": p, "q": bh(p),
                         "failure_downtime_h": dt.to_numpy(),
                         "downtime_vs_median": (dt / dt.median()).to_numpy() if dt.median() > 0 else np.nan})
     out["bad_actor"] = (out["q"] < alpha) & (out["ratio"] > 1)
@@ -252,10 +339,14 @@ def turbine_outliers(fail: pd.DataFrame, up: pd.DataFrame, alpha: float = 0.05) 
 
 def code_turbine_outliers(fail: pd.DataFrame, up: pd.DataFrame, key: str = "code", alpha: float = 0.05,
                           min_n: int = 3) -> pd.DataFrame:
-    """(code, turbine) pairs where one turbine has far more of a code than its share of operating hours."""
+    """(code, turbine) pairs where one turbine has far more of a code than its share of operating hours.
+
+    Counts repeat chains when ``fail`` has the repeat columns (see ``turbine_outliers``).
+    """
     h = up.groupby("turbine_id")["hours"].sum()
     share = h / h.sum()
-    cnt = fail.groupby([key, "turbine_id"]).size().unstack(fill_value=0).reindex(columns=h.index, fill_value=0)
+    cnt = (decluster(fail).groupby([key, "turbine_id"]).size().unstack(fill_value=0)
+           .reindex(columns=h.index, fill_value=0))
     rows = []
     for code, r in cnt.iterrows():
         tot = r.sum()
@@ -274,10 +365,10 @@ def code_turbine_outliers(fail: pd.DataFrame, up: pd.DataFrame, key: str = "code
 def jackknife(fail: pd.DataFrame, key: str = "code") -> pd.DataFrame:
     """Knights' jack-knife diagram: failures and mean restore time per ``key`` with the quadrant limits.
 
-    Limits: mean failures per item (total failures / number of items) and the overall MTTR (total restore
+    Limits: mean failures per item (total failures / number of items) and the overall MTTR (total fault
     hours / total failures). Above both: acute + chronic; long repairs only: acute; frequent only: chronic.
     """
-    g = fail.groupby(key)["duration_h"].agg(failures="size", mttr_h="mean", downtime_h="sum").reset_index()
+    g = restore_h(fail).groupby(fail[key]).agg(failures="size", mttr_h="mean", downtime_h="sum").reset_index()
     if g.empty:
         return g
     n_lim = g["failures"].sum() / len(g)

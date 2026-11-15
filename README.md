@@ -21,12 +21,14 @@ manufacturer, any export layout - into those numbers, and checks itself on three
 
 What it computes, per farm, turbine, component, code and month:
 
-1. **Pareto** of stop hours, stops, failures and lost energy by status code and by component, with overlapping
+1. **Pareto** of stop hours, stops, forced-outage episodes and lost energy by status code and by component, with
+   overlapping
    stops attributed once (to the *first-up* alarm). Code-to-component mappings are plain CSV files, one per
    manufacturer.
-2. **Reliability**: MTBF with confidence intervals, MTTR and the distribution of restore times; Weibull of the
-   times between failures; **Crow-AMSAA** (is reliability improving or deteriorating?); **bad actors** - turbines
-   and code x turbine pairs above the fleet rate, and the jack-knife diagram of codes.
+2. **Reliability**: MTBF with confidence intervals, MTTR and the distribution of fault times; Weibull of the
+   times between failures; **Crow-AMSAA** on repeat chains with turbine-bootstrap intervals (is reliability
+   improving or deteriorating?); **bad actors** - turbines and code x turbine pairs above the fleet rate, and the
+   jack-knife diagram of codes; how much every count depends on the counting rule.
 3. **Compound events**: repeat failures (same code within 7 days of the restart) against the rate expected by
    chance; alarm cascades (primary against secondary alarms); automatic resets against remote and on-site
    interventions; the time until a technician is on site.
@@ -39,62 +41,106 @@ What it computes, per farm, turbine, component, code and month:
 
 ## Key results
 
-| | Kelmarsh | Penmanshiel | Hill of Towie |
+What this README calls a *failure* is a **forced-outage stop episode**: the stops of one turbine less than 10
+minutes apart, in which a forced-outage stop was at some moment the reason the turbine stood still, unless half of
+the turbines stopped within 5 minutes (a common cause). It is a counting rule, not a law of nature: the next
+section shows how much the counts move under other reasonable rules.
+
+| | Kelmarsh | Penmanshiel | Hill of Towie³ |
 |---|---|---|---|
 | Turbine-years of logs (gaps removed) | 32.7 | 104.3 | 214.8 |
-| Failures (forced-outage episodes, not fleet-wide) | 267 | 2,013 | 1,611 |
-| Failures per turbine-year | 8.2 | 19.3 | 7.5 |
-| MTBF, operating hours | 1,051 | 443 | 1,107 |
-| Restore time: median / mean (MTTR) | 16 min / 8.2 h | 28 min / 6.9 h | 61 min / 23.1 h |
+| Forced-outage stop episodes (not fleet-wide)² | 267 | 2,013 | 1,611 |
+| ... of which another turbine failed within 10 minutes (coincident) | 45 (17 %) | 441 (22 %) | 186 (12 %) |
+| Repeat chains (a code repeating within 7 days counts once) | 220 | 1,149 | 1,084 |
+| Episodes per turbine-year | 8.2 | 19.3 | 7.5 |
+| MTBF, operating hours (turbine bootstrap 90 %) | 1,051 (908-1,232) | 443 (373-533) | 1,107 (853-1,413) |
+| Time down for the fault: median / mean (MTTR) | 16 min / 4.4 h | 14 min / 5.8 h | 43 min / 13.1 h |
+| Episode, first stop to restart: median / mean | 16 min / 8.2 h | 28 min / 6.9 h | 61 min / 23.1 h |
 | Codes making 80 % of all stop hours (of codes with downtime) | 7 of 69 | 16 of 99 | 21 of 101 |
 | Repeat failures within 7 days (expected by chance) | 18 % (1.6 %) | 43 % (3.5 %) | 33 % (1.6 %) |
-| Weibull shape of times between failures (90 % interval) | 0.40 (0.36-0.45) | 0.37 (0.36-0.39) | 0.44 (0.42-0.45) |
-| Crow-AMSAA beta (90 % interval)¹ | 0.82 (0.74-0.91) | 1.12 (1.08-1.16) | 0.44 (0.34-0.55) |
-| Trend (likelihood-ratio test; Laplace test agrees) | **improving** | **deteriorating** | **improving** |
+| Weibull shape of times between failures (turbine bootstrap 90 %) | 0.40 (0.33-0.52) | 0.37 (0.35-0.41) | 0.44 (0.41-0.51) |
+| Crow-AMSAA beta on repeat chains (turbine bootstrap 90 %)¹ | 0.81 (0.76-0.91) | 0.95 (0.89-1.01) | 0.64 (0.42-0.87) |
+| Crow-AMSAA beta on every episode (interval assumes independent events) | 0.82 (0.74-0.91) | 1.12 (1.08-1.16) | 0.44 (0.34-0.55) |
+| Trend (bootstrap interval of the repeat-chain beta below / above 1) | **improving** | **no clear trend** | **not assessed** (code dictionary from 2021 only) |
 | Cleared by automatic reset / technician on site | 52 % / 19 % | 40 % / 16 % | 34 % / no on-site codes |
-| Time to technician on site: median / 90th percentile | 15.7 h / 72 h | 12.9 h / 45 h | not in the log |
-| Bad-actor turbines (Poisson test, FDR 5 %) | none | T12, T11, T08, T02 | T06, T14 |
+| Time to technician on site: median / 90th percentile (failures it rests on) | 15.7 h / 72 h (23) | 12.9 h / 45 h (159) | not in the log |
+| Bad-actor turbines (repeat chains, Poisson test, FDR 5 %) | none | T02 | T06 |
 | Logged vs SCADA-detected stops, F1 of 10-min intervals (weighted by stop hours) | 0.82 (2016-2021) | 0.86 (2018, 2020) | 0.88 (2021) |
 | Clock check: best shift of the log against SCADA | 0 h | 0 h | 0 h |
 
-¹ Crow-AMSAA fits the 261 / 1,997 / 1,611 failures that start inside the observation windows
-(`results/<farm>/crow_amsaa.csv`). The other 6 at Kelmarsh and 16 at Penmanshiel start during a data-link outage
-of 6 hours or more, which is cut out of the observation time, or at the very edge of a window: the controller
-kept its own log while the link was down. The failure counts, rates and MTBF above include them, so the rates
-are slightly higher and the MTBF slightly lower than an exposure-consistent count would give (6 of 267 and 16 of
-2,013 failures).
+¹ Crow-AMSAA fits only failures that start inside the observation windows; a few start during a data-link
+outage of 6 hours or more, which is cut out of the observation time while the controller kept its own log
+(`results/<farm>/crow_amsaa.csv` has the counts). The bootstrap resamples whole turbines, so it keeps the
+dependence between a turbine's failures that the profile-likelihood and chi-square intervals ignore.
+
+² Episodes per turbine-year, MTBF and the trend depend on the counting rule; see the next section.
+
+³ **A different definition.** At Kelmarsh and Penmanshiel the operator's platform gives every event an IEC
+category and a stop flag. Hill of Towie's alarm log has neither: for 134 undocumented codes both were inferred
+from 2021 SCADA (see finding 8), so its column counts something similar, not the same thing, and the code
+dictionary does not reach codes that appear only in other years.
+
+### What the counts depend on
+
+| Counting rule (`results/<farm>/sensitivity.csv`) | Kelmarsh | Penmanshiel | Hill of Towie |
+|---|---|---|---|
+| published: stops < 10 min apart are one episode; fleet-wide = half the turbines within 5 min | 267 (8.2 per turbine-year, MTBF 1,051 h) | 2,013 (19.3, 443 h) | 1,611 (7.5, 1,107 h) |
+| stops < 1 h apart are one episode | 229 (-14 %) | 1,534 (-24 %) | 1,443 (-10 %) |
+| stops < 24 h apart are one episode | 224 (-16 %) | 1,342 (-33 %) | 1,294 (-20 %) |
+| coincident failures removed (another turbine within 10 minutes) | 222 (-17 %) | 1,572 (-22 %) | 1,425 (-12 %) |
+| 1 h gap and coincident removed | 192 (5.9, 1,461 h) | 1,123 (10.8, 793 h) | 1,273 (5.9, 1,400 h) |
+| repeat chains only | 220 (-18 %) | 1,149 (-43 %) | 1,084 (-33 %) |
+| without tower-oscillation, remote manual and external stops | 116 (3.6, 2,419 h) | 1,262 (12.1, 707 h) | no such codes |
+
+The fleet-wide rule needs half of the turbines within 5 minutes, so a common cause that stops two or three
+turbines stays as two or three turbine failures: at Penmanshiel the coincident episodes are mostly tower
+oscillation in storms, remote manual stops (91) and "externally stopped" (50) - operator actions and weather
+rather than faults. Depending on the rule, Kelmarsh has 3.6 to 8.2 failures per turbine-year and Penmanshiel 10.8
+to 19.3. Compare such numbers between farms or with a contract only under the same rule; the tool flags the
+coincident episodes (`coincident`) and takes the merge gap as an option.
 
 **1. A handful of codes carries the downtime, and they are rarely the frequent ones.** At Kelmarsh 7 of 69
 codes make 80 % of all stop hours: on-site manual stops (28 %), a single 82-day "emergency stop top box" (14 %),
 overvoltage, a 68-day "stop for manual reboot", park master stops and icing. The *failures* are another list:
-tower and nacelle stops (mostly tower oscillation) make 128 of the 267 failures but only 79 hours, while 16 drivetrain and 12 converter
-failures cost 740 hours each (MTTR 46 h and 62 h). The jack-knife diagram puts this on one chart; at
-Penmanshiel five codes are acute *and* chronic: remote manual stops logged as forced outages, the pitch
-charging circuit, generator brush service, the frequency converter error and the repeating BP52 error.
+tower and nacelle stops (mostly tower oscillation) make 128 of the 267 failures but only 76 hours of fault time,
+while 12 converter failures cost 390 hours (MTTR 33 h). Drivetrain failures look long by episode (46 h on
+average) but the fault itself lasts 7.7 h: the rest is maintenance done in the same stop, which is why MTTR here
+counts only the time the forced-outage stops were the reason the turbine stood still (Kelmarsh: 1,185 of 2,189
+episode hours; 990 are scheduled-maintenance stops inside the same episodes). Even so, the five longest faults
+make 42 % of Kelmarsh's fault hours: a mean over 267 episodes this skewed says little, the median (16 minutes)
+and the jack-knife diagram say more. At Penmanshiel four codes are acute *and* chronic: remote manual stops
+logged as forced outages, the pitch charging circuit, generator brush service and the frequency converter error.
 
 **2. Failures come in bursts: resets without a fix.** The Weibull shape of the times between failures is
 0.37-0.40 at both Senvion farms - far from the 1.0 of random failures - and 43 % of Penmanshiel's failures repeat
 the same code within 7 days of the restart, against 3.5 % if each code simply recurred at its own rate. The worst:
-*anemometer defect* - 401 failures, 88 % repeats (7 % by chance), 153 of them on T12 alone (31 expected) and 77 on
-T08; *missing gear oil (high rpm)* 48 % repeats, a quarter of its 240 failures on T11. At Kelmarsh "high rotor speed nacelle"
-occurs only on T1 (13 of 13, 46 % repeats) and "tower oscillation X level 1" mostly on T6 (21 of 37). These are
-the code x turbine pairs the bad-actor test flags (2 at Kelmarsh, 19 at Penmanshiel): one turbine's sensor or
-hydraulics problem, not a fleet issue - and the agenda for the next meeting with the service provider.
+*anemometer defect* - 401 failures, 88 % repeats (7 % by chance), in only 50 repeat chains: T12's 153 anemometer
+stops are 5 chains, one of them 147 resets long - one sensor left unrepaired, not a weak turbine; *missing gear
+oil (high rpm)* 48 % repeats, a quarter of its 240 failures on T11. Counted as chains, as the bad-actor test does,
+T12, T11 and T08 are not out of line; T02 is (122 chains against 79 expected). At Kelmarsh "high rotor speed
+nacelle" occurs only on T1 (7 chains of 7, 46 % repeats) and "tower oscillation X level 1" mostly on T6 (17 of 32
+chains). These are the code x turbine pairs the test flags (2 at Kelmarsh, 9 at Penmanshiel): one turbine's sensor
+or hydraulics problem, not a fleet issue - and the agenda for the next meeting with the service provider.
 
-**3. Kelmarsh got better, Penmanshiel worse.** Kelmarsh: beta 0.82, both tests agree (likelihood ratio
-p = 0.0009, Laplace p = 0.0005), failures per turbine-year fell from 9.2 (2016-2018) to 5.3 (2021). Penmanshiel:
-beta 1.12 (likelihood ratio p = 10<sup>-6</sup>), from 11 failures per turbine-year in 2017-2019 to 26-30 in 2021-2022 - mostly
-the anemometer and gear-oil repeats above. Its commissioning year 2016 shows the opposite pattern (30 per
-turbine-year in four months).
+**3. Kelmarsh got better; at Penmanshiel three turbines' repeating alarms did not make the fleet worse.**
+Kelmarsh: beta 0.81 on repeat chains, 0.76-0.91 when whole turbines are resampled, the same on every episode
+(0.82); failures per turbine-year fell from 9.2 (2016-2018) to 5.3 (2021). Penmanshiel looks like it deteriorated
+- beta 1.12 on every episode, 11 failures per turbine-year in 2017-2019 against 26-30 in 2021-2022 - but that is
+the T08/T11/T12 anemometer and gear-oil repeats. On repeat chains beta is 0.95 (p = 0.09); with one failure per
+turbine-day 1.02; without T08, T11 and T12 0.94; without the anemometer, remote-stop and external-stop codes 0.98.
+Resampling turbines gives 0.89-1.01 on chains and 0.98-1.24 on every episode, against the 1.08-1.16 an
+independence assumption would claim: turbine-year counts have a variance 20 times their mean. Only 4 of the 14
+turbines deteriorate on their own. Its commissioning year 2016 shows the opposite pattern (30 per turbine-year
+in four months).
 
-**4. Half of the failures clear themselves; the rest wait half a day for a technician.** The Senvion controller
+**4. Half of the failures clear themselves; the few that need a visit wait half a day.** The Senvion controller
 restarts by itself after a fixed delay: the restore-time histogram has a sharp peak at 15-16 minutes, so 20
 minutes separates automatic resets from the rest. 52 % (Kelmarsh) and 40 % (Penmanshiel) of the failures end
-that way. When a technician comes, the first on-site event (manual stop on site, manual yaw, manual operation)
-follows the failure after a median of 15.7 h and 12.9 h, with 10 % taking more than 72 h and 45 h. Failures
-that happen while someone is already on site (the on-site event comes within 15 minutes) are left out of the
-response time - they would make it look like minutes.
-
+that way. A response time can be measured for 23 failures at Kelmarsh and 159 at Penmanshiel (9 % and 8 % of all
+failures): the first on-site event (manual stop on site, manual yaw, manual operation) follows the failure after
+a median of 15.7 h and 12.9 h, with 10 % taking more than 72 h and 45 h. Another 29 and 155 failures happened
+while someone was already on site (the on-site event came within 15 minutes) and are left out - they would make
+the response look like minutes. With 23 cases, Kelmarsh's figures are indicative only.
 **5. Cascades say which alarm to look at.** "Charging circuit pitch" brings two or three "battery charge cycle
 axis" errors along in 89 % of its episodes (lift 260): only the first is the fault. "Icing (stop)" brings
 "icing (deviation of electrical power)" in 93 %, an anemometer defect the 4-20 mA anemometer / vane alarms.
@@ -122,16 +168,21 @@ stops of its test years 2020-2021 at 1.85-1.96 GWh; none of the three prices the
 cable untwisting, pitch lubrication). From one year of SCADA (2021) the tool infers which of the other codes
 stop the turbine (the rotor is parked in at least 70 % of the code's active intervals: 102 of 134 codes with
 enough data) and which are faults (the documented "turbine error active" timer runs during at least half of that
-time: 49). On that basis: 1,611 failures in 215 turbine-years. **T06 is the bad actor** - 313 failures against
-72 expected, 249 of them one code (3220), 20 times its share of the fleet, repeating within 7 days in 77 % of the
-cases (2.6 % by chance): one turbine's chronic fault that a fleet-level Pareto would show as a fleet problem.
-Reliability improved (beta 0.44, Laplace agrees): 14 failures per turbine-year in 2018, 4-5 in 2022-2024, 6.5 in
-2025. Restore times went the other way - MTTR 5-11 h until 2019, 31-51 h in 2020-2025. The logged stops match SCADA
-(F1 0.88) and contain 95 % of the shutdown time the operator computed from SCADA and its own logs; the log has
-34 % more stop hours, mostly undocumented 1000-series stop codes without the error timer (by analogy with the
-published 1005 "availability - low wind", availability states), which stay uncategorised and out of the failure
-counts. Without code texts the Pareto by component is 92 % "unmapped" - the honest result for a log without a
-dictionary.
+time: 49). On that basis: 1,611 failures in 215 turbine-years. **T06 is the bad actor** - 313 failures, 91 repeat
+chains against 48 expected; 249 of the failures are one code (3220), 20 times its share of the fleet, repeating
+within 7 days in 77 % of the cases (2.6 % by chance): one turbine's chronic fault that a fleet-level Pareto would
+show as a fleet problem. **No trend is claimed**, because a dictionary built from 2021 cannot see codes that
+are rare in 2021: the share of active alarm hours from codes outside the dictionary is 0.2 % in 2021, 4-14 % in 2016-2020 and 17-32 % in 2022-2025 (45,300 hours in 2022 alone; `results/hill_of_towie/yearly.csv`). Codes that first appear in 2022 (73033 and 73030, 61,000 active hours together;
+3235, 31 events with a median of 253 hours in 2024-2026) can never count as failures, so the low rates after 2021
+(3.8-4.8 per turbine-year in 2022-2024) and the beta below 1 are partly an artefact; the study refuses to call it
+a trend (`trend: not assessed`). The same caveat covers the longer fault times from 2021 (MTTR 2-8 h until 2020,
+19-43 h after). The 2018 peak (14 per turbine-year) is mostly code 13325 (120 failures), not T06's 3220, which
+peaks in 2019 (153). Calibrating the dictionary on every year would need the SCADA of every year. The logged stops
+match SCADA (F1 0.88) and contain 95 % of the shutdown time the operator computed from SCADA and its own logs;
+the log has 34 % more stop hours, mostly undocumented 1000-series stop codes without the error timer (by analogy
+with the published 1005 "availability - low wind", availability states), which stay uncategorised and out of
+the failure counts. Without code texts the Pareto by component is 92 % "unmapped" - the honest result for a log
+without a dictionary.
 
 ## Validation
 
@@ -150,6 +201,9 @@ turbine's operating clock, restore times lognormal, codes from a known mix; then
 | Weibull renewal process, heavy random censoring | shape / scale | 1.6 / 300 h | within 5 % |
 | one turbine with 2.5 x the failure rate | bad actors found | that turbine | that turbine only |
 | 30 % of failures repeat within 2 days | repeats found | all | > 97 %; rate without repeats = chance rate |
+| constant rate, half of the failures repeating within 2 days | Crow-AMSAA beta on chains (turbine bootstrap) | 1 | 1.01 (0.97-1.05), no clear trend |
+| the same, on every event | interval: profile likelihood / turbine bootstrap | - | bootstrap > 1.1 x wider |
+| one turbine whose extra failures are all repeats | bad actors on failures / on chains | - / none | that turbine / none |
 | technician on site 6 h after each failure | median response | 6 h | 6.0 h |
 | every code 1001 drags 7101 along | cascade confidence | 100 % | 100 % |
 
@@ -228,10 +282,12 @@ only; nothing is sent anywhere.
 
 **Episodes and attribution.** Stops of one turbine that overlap or follow within 10 minutes form one episode
 (one repair, first stop to final restart). Each moment of downtime belongs to the earliest-starting stop still
-active (the first-up; ties: the one listed first). An episode is a **failure** when a stop of a failure category
-(forced outage) was at some moment the reason the turbine stood still, and it did not start within 5 minutes on
-at least half of the turbines (then it is fleet-wide: grid loss, park controller, storm). The failure's code is
-the failure-category stop with most attributed hours.
+active (the first-up; ties: the one listed first). An episode is a **failure** (a forced-outage stop episode) when
+a stop of a failure category (forced outage) was at some moment the reason the turbine stood still, and it did not
+start within 5 minutes on at least half of the turbines (then it is fleet-wide: grid loss, park controller, storm).
+The failure's code is the failure-category stop with most attributed hours. Failures that start within 10 minutes
+of a failure on another turbine are flagged `coincident` (a partial common cause); `study.sensitivity` recounts
+everything with merge gaps of 1 h and 24 h, without coincident failures, on repeat chains and without chosen codes.
 
 **MTBF and MTTR.** With $`n`$ failures in $`T`$ operating hours (observation minus all stop time):
 
@@ -240,8 +296,11 @@ the failure-category stop with most attributed hours.
 \mathrm{MTBF} \in \left[\frac{2T}{\chi^2_{1-\alpha/2,\;2n+2}},\; \frac{2T}{\chi^2_{\alpha/2,\;2n}}\right]
 ```
 
-MTTR is the mean time to *restore* (waiting, travel and logistics included); restore times are summarised by
-median, 90th percentile and a lognormal fit.
+MTTR is the mean time down for the fault: the attributed hours of the episode's forced-outage stops (waiting,
+travel and logistics included). Maintenance done in the same stop after the fault and uncategorised stops are in
+the episode duration, which is reported next to it. Fault times are summarised by median, 90th percentile and a
+lognormal fit. The chi-square interval assumes independent failures; the published MTBF interval resamples whole
+turbines instead.
 
 **Weibull** of the operating times $`t_i`$ between failures of each turbine, the last interval of every
 observation window right-censored ($`\delta_i = 0`$), the first dropped:
@@ -258,9 +317,12 @@ and late starts handled exactly):
 \ell(\lambda,\beta) = n\ln\lambda + n\ln\beta + (\beta-1)\sum_{i}\ln t_i - \lambda\sum_{q,j}\left(T_{qj}^{\beta}-S_{qj}^{\beta}\right)
 ```
 
-$`\beta`$ by maximum likelihood, its 90 % interval from the profile likelihood, the verdict from the
-likelihood-ratio test of $`\beta = 1`$. Second opinion: the Laplace test on each turbine's observed-time clock
-(windows joined end to end), which does not depend on the age origin:
+$`\beta`$ by maximum likelihood on the first failure of every repeat chain (a code repeating on the same
+turbine within 7 days of the restart is one event, not several), its 90 % interval from resampling whole turbines
+500 times. The trend is *improving* or *deteriorating* only when that interval lies below or above 1. The fit on
+every episode and its profile-likelihood interval are reported too; they assume independent events, which repeat
+failures are not. Second opinion: the Laplace test on each turbine's observed-time clock (windows joined end to
+end), which does not depend on the age origin:
 
 ```math
 U = \frac{\sum_i \left(\tau_i - L_{q(i)}/2\right)}{\sqrt{\sum_i L_{q(i)}^2/12}} \sim N(0,1)
@@ -271,10 +333,12 @@ behind the first-up attribution are computed by
 [res-asset-kpi](https://github.com/kwwaleszczynski-del/res-asset-kpi) (`res_asset_kpi.wind`,
 `res_asset_kpi.intervals`), the KPI library extracted from this and five related projects.
 
-**Bad actors.** Turbine $`j`$ with $`n_j`$ failures in $`T_j`$ operating hours against the fleet rate
+**Bad actors.** Turbine $`j`$ with $`n_j`$ repeat chains in $`T_j`$ operating hours against the fleet rate
 $`r = \sum n / \sum T`$: one-sided p-value $`P(N \ge n_j)`$ for $`N \sim \mathrm{Poisson}(r T_j)`$, adjusted by
-Benjamini-Hochberg across turbines; the same per code and turbine. Jack-knife diagram (Knights, 2001): failures
-against mean restore time per code, limits at the mean failures per code and the overall MTTR.
+Benjamini-Hochberg across turbines; the same per code and turbine. Counting every repeat instead would make the
+Poisson test far too confident (turbine-year counts of failures have a variance 2 to 23 times their mean).
+Jack-knife diagram (Knights, 2001): failures against mean fault time per code, limits at the mean failures per code
+and the overall MTTR.
 
 **Repeats against chance.** A code $`c`$ that fails $`n_c`$ times in $`T`$ turbine operating hours would recur
 within $`d`$ days by chance with probability
@@ -326,12 +390,18 @@ $`P(\mathrm{Poisson}(\mu) \le s) \ge`$ the service level; it assumes a constant 
   role and by the restore time; a remote reset that leaves no trace in the log ends up as "not logged". Hill of
   Towie's alarm log has no on-site codes at all.
 - **Response time is time to the first on-site event**, not to arrival: a technician who works without putting
-  the turbine into manual mode is invisible.
+  the turbine into manual mode is invisible. It rests on few failures (23 at Kelmarsh, 159 at Penmanshiel).
 - **Trends are fleet averages.** Crow-AMSAA assumes one power law over the whole life; Penmanshiel's
-  commissioning burst in 2016 followed by a rise from 2020 is not a power law, which is why both tests are
-  reported. The yearly rates show the shape. Per turbine the law can fail outright: for 5 of the 21 Hill of
-  Towie turbines, observed only from four years after commissioning with their failures bunched in 2018-2019,
-  the likelihood has no maximum and the table says "no power-law fit".
+  commissioning burst in 2016 followed by a rise from 2020 is not a power law. The yearly rates show the shape.
+  Per turbine the law can fail outright: for 5 of the 21 Hill of Towie turbines, observed only from four years
+  after commissioning with their failures bunched in 2018-2019, the likelihood has no maximum and the table says
+  "no power-law fit".
+- **A code dictionary built from one year** classifies only the codes active in that year. At Hill of Towie
+  that hides the codes of other years from the failure counts, so its rates are not comparable across years and
+  its trend is not assessed (`results/hill_of_towie/yearly.csv` has the unclassified hours per year).
+- **Failures are counted, not given.** The merge gap, the fleet-wide rule and repeat chains change the counts by
+  10 to 57 %; MTBF and MTTR intervals that assume independent failures are too narrow on this kind of data, which
+  is why the published ones resample whole turbines.
 - **Lone events in the repeated autumn hour** of a local-time log cannot be placed (see Validation).
 - **Lost energy** exists only where SCADA has rows; stops without them are reported as unpriced hours.
 - **Spare parts** are an illustration: the logs do not say which repairs used a part.
@@ -344,14 +414,15 @@ src/wind_om/
   mapping.py      code -> component / role / category / stopping
   events.py       open events, episodes, first-up attribution, fleet-wide events, exposure, periods
   pareto.py       Pareto by code / component / category for any period
-  reliability.py  lognormal, Weibull, bad actors, jack-knife; MTBF / MTTR, Crow-AMSAA from res-asset-kpi
+  reliability.py  lognormal, Weibull, repeat chains, turbine bootstrap, trend, bad actors, jack-knife;
+                  MTBF / MTTR, Crow-AMSAA from res-asset-kpi
   compound.py     repeats, cascades, restoration and response time
   spares.py       expected failures per component, Poisson stock
   scada.py        lost energy, log-vs-SCADA agreement, clock check, code catalogue (uses wind_downtime)
   report.py       monthly KPI pack: Excel and HTML
   sources.py      adapters of the three open farms (through the same YAML files)
   fetch.py        exact byte-range download of the open logs
-  study.py        the study, dashboard data, demo, DST check
+  study.py        the study, sensitivity of the counts, code-dictionary coverage, dashboard data, demo, DST check
   synthetic.py    synthetic logs with known parameters
   configs/, mappings/
 tests/            synthetic recovery, hard cases, SCADA checks, report files, CLI

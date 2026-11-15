@@ -8,7 +8,7 @@ sheet               content                                                     
 Summary             headline KPIs, stop hours and lost energy by category, Crow-AMSAA trend         both
 Pareto codes        downtime, share, cumulative share, stops, first-up, failures, lost MWh          month
 Pareto components   the same by component                                                          month
-MTBF turbines       failures, operating hours, MTBF with 90 % interval, MTTR, median, P90           12 months
+MTBF turbines       episodes, operating hours, MTBF with 90 % interval, MTTR (fault time), P90       12 months
 MTBF components     the same by component                                                          12 months
 Bad actors          turbines above the fleet rate (Poisson + FDR), code x turbine pairs,           12 months
                     jack-knife quadrants of the codes
@@ -76,18 +76,18 @@ def kpi_pack(a, month: str, tz: str = "Europe/Warsaw", farm: str = "farm", histo
     by_cat = pareto(a.ev, a.seg, a.ep, "category", m0, m1).set_index("category")
     turb = R.mtbf_mttr(f_w, up_w, by=["turbine_id"])
     comp = R.mtbf_mttr(f_w, up_w, by=["component"])
-    bad_t = R.turbine_outliers(f_w, up_w)
-    bad_ct = R.code_turbine_outliers(f_w, up_w)
     jk = R.jackknife(f_w, key="code")
     rep_m = a.rep[(a.rep["start"] >= m0) & (a.rep["start"] < m1)]
     rep_w = a.rep[(a.rep["start"] >= w0) & (a.rep["start"] < m1)]
+    bad_t = R.turbine_outliers(rep_w, up_w)  # counts repeat chains, not every repeat
+    bad_ct = R.code_turbine_outliers(rep_w, up_w)
     rep_sum = compound.repeat_summary(rep_w, operating_h=up_w["hours"].sum(), days=a.settings.repeat_days)
     res_m = a.res[(a.res["start"] >= m0) & (a.res["start"] < m1)]
     res_w = a.res[(a.res["start"] >= w0) & (a.res["start"] < m1)]
     rs_m, rs_w = compound.restoration_summary(res_m), compound.restoration_summary(res_w)
     cas_w = a.cas[(a.cas["start"] >= w0) & (a.cas["start"] < m1)]
     pairs = compound.cascade_pairs(cas_w, a.ev.groupby("code")["description"].first())
-    ca = R.crow_amsaa(a.fail[a.fail["start"] < m1], _clip(a.expo, a.start, m1), a.origin)
+    tr = R.trend(a.rep[a.rep["start"] < m1], _clip(a.expo, a.start, m1), a.origin, n_boot=200)
 
     hist = per.iloc[max(pos - 23, 0):pos + 1].reset_index()
     trend = monthly_hours(a.seg, a.ev, hist, "category")
@@ -104,24 +104,32 @@ def kpi_pack(a, month: str, tz: str = "Europe/Warsaw", farm: str = "farm", histo
 
     n_t = a.expo["turbine_id"].nunique()
     hours_m = float(per.loc[month, "hours"])
-    fail_h = float(f_m["duration_h"].sum())
+    r_m, r_w = R.restore_h(f_m), R.restore_h(f_w)
+    on_w = rs_w.set_index("restoration") if len(rs_w) else None
     summary = {
         "Farm": farm, "Month": month, "Time zone": tz, "Turbines": n_t, "Hours in month": hours_m,
-        "Failures (month)": len(f_m), "Failures (12 months)": len(f_w),
-        "Failures per turbine-year (12 months)": len(f_w) / (up_w["hours"].sum() / R.HOURS_PER_YEAR)
+        "Forced-outage episodes (month)": len(f_m), "Forced-outage episodes (12 months)": len(f_w),
+        "Forced-outage episodes per turbine-year (12 months)": len(f_w) / (up_w["hours"].sum() / R.HOURS_PER_YEAR)
         if up_w["hours"].sum() else np.nan,
+        "Coincident with another turbine within 10 min (month)": int(f_m["coincident"].sum())
+        if "coincident" in f_m else 0,
         "MTBF h (12 months)": up_w["hours"].sum() / len(f_w) if len(f_w) else np.nan,
-        "MTTR h (month)": f_m["duration_h"].mean() if len(f_m) else np.nan,
-        "MTTR h (12 months)": f_w["duration_h"].mean() if len(f_w) else np.nan,
-        "Failure downtime h (month)": fail_h,
+        "MTTR h, fault time (month)": r_m.mean() if len(f_m) else np.nan,
+        "MTTR h, fault time (12 months)": r_w.mean() if len(f_w) else np.nan,
+        "Fault downtime h (month)": float(r_m.sum()),
         "Repeat failures (month)": int(rep_m["is_repeat"].sum()),
         "Repeat rate (12 months)": rep_w["is_repeat"].mean() if len(rep_w) else np.nan,
         "Auto resets share (month)": float((res_m["restoration"] == "auto_reset").mean()) if len(res_m) else np.nan,
-        "Median on-site response h (12 months)": rs_w.set_index("restoration")["response_median_h"].get(
-            "on_site", np.nan) if len(rs_w) else np.nan,
+        "Median on-site response h (12 months)": on_w["response_median_h"].get("on_site", np.nan)
+        if on_w is not None else np.nan,
+        "Failures with a measured response (12 months)": int(np.nan_to_num(on_w["response_n"].get("on_site", 0)))
+        if on_w is not None else 0,
         "Codes making 80 % of downtime (month)": vital_few(pc),
         "Bad-actor turbines (12 months)": ", ".join(bad_t.loc[bad_t["bad_actor"], "turbine_id"]) or "none",
-        "Crow-AMSAA beta (to month end)": ca.beta, "Reliability trend": ca.verdict,
+        "Crow-AMSAA beta, repeat chains (to month end)": tr["beta"],
+        "Crow-AMSAA beta, turbine bootstrap 90 % low": tr["beta_boot_lo"],
+        "Crow-AMSAA beta, turbine bootstrap 90 % high": tr["beta_boot_hi"],
+        "Reliability trend": tr["verdict"],
     }
     for c in CATEGORIES:
         if c in by_cat.index and by_cat.loc[c, "hours"] > 0:
@@ -132,8 +140,8 @@ def kpi_pack(a, month: str, tz: str = "Europe/Warsaw", farm: str = "farm", histo
             if c in by_cat.index and by_cat.loc[c, "lost_mwh"] > 0:
                 summary[f"Lost MWh: {c}"] = float(by_cat.loc[c, "lost_mwh"])
 
-    fcols = ["turbine_id", "start", "end", "duration_h", "code", "description", "component", "first_code",
-             "n_events", "restoration", "response_h"]
+    fcols = ["turbine_id", "start", "end", "duration_h", "fault_h", "code", "description", "component",
+             "first_code", "n_events", "coincident", "restoration", "response_h"]
     fm = res_m[[c for c in fcols if c in res_m]].copy()
     for c in ("start", "end"):
         fm[c] = fm[c].dt.tz_convert(tz).dt.tz_localize(None)
@@ -155,11 +163,13 @@ def kpi_pack(a, month: str, tz: str = "Europe/Warsaw", farm: str = "farm", histo
         "Pareto codes": "Attributed stop hours (first-up rule, no double counting), all categories; rows inside "
                         "80 % cumulative share are the vital few.",
         "Pareto components": "The same grouped by component (code mapping).",
-        "MTBF turbines": "Failure episodes (forced outage, not fleet-wide). MTBF = operating hours / failures, "
-                         "90 % chi-square interval. MTTR = mean time to restore (first stop to restart).",
+        "MTBF turbines": "Forced-outage stop episodes (not fleet-wide). MTBF = operating hours / episodes, "
+                         "90 % chi-square interval (assumes independent failures). MTTR = mean fault time; "
+                         "episode_h = mean first stop to restart.",
         "MTBF components": "Operating hours of the whole fleet per component.",
-        "Bad actors": "One-sided exact Poisson test against the fleet rate, Benjamini-Hochberg q < 0.05.",
-        "Jack-knife codes": "Knights' jack-knife: failures vs mean restore time; limits = mean failures per code "
+        "Bad actors": "Repeat chains (a code repeating within the repeat window counts once) against the fleet "
+                      "rate: one-sided exact Poisson test, Benjamini-Hochberg q < 0.05.",
+        "Jack-knife codes": "Knights' jack-knife: failures vs mean fault time; limits = mean failures per code "
                             "and the overall MTTR.",
         "Repeats": f"The same code on the same turbine within {a.settings.repeat_days:g} days after restart.",
         "Repeat rate": "chance_rate = repeat rate expected from the code's own frequency alone (Poisson).",
@@ -167,7 +177,8 @@ def kpi_pack(a, month: str, tz: str = "Europe/Warsaw", farm: str = "farm", histo
         "Restoration": f"on_site / remote from the code roles; auto_reset = nothing logged and restored within "
                        f"{a.settings.auto_max}; response = failure start to first on-site event.",
         "Trend": "Per local-time month.",
-        "Failures": "Times in local time.",
+        "Failures": "Times in local time. fault_h = time down for the fault; coincident = another turbine "
+                    "failed within 10 minutes (possible common cause).",
     }
     return Pack(farm, month, tz, summary, tables, notes)
 
@@ -382,8 +393,10 @@ def write_html(pack: Pack, path: Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     s = pack.summary
-    tiles = [("Failures (month)", s["Failures (month)"]), ("MTBF h (12 months)", s["MTBF h (12 months)"]),
-             ("MTTR h (month)", s["MTTR h (month)"]), ("Repeat failures (month)", s["Repeat failures (month)"]),
+    tiles = [("Forced-outage episodes (month)", s["Forced-outage episodes (month)"]),
+             ("MTBF h (12 months)", s["MTBF h (12 months)"]),
+             ("MTTR h, fault time (month)", s["MTTR h, fault time (month)"]),
+             ("Repeat failures (month)", s["Repeat failures (month)"]),
              ("Auto resets share (month)", s["Auto resets share (month)"]),
              ("Reliability trend", s["Reliability trend"])]
     if "Lost MWh (month, all stops)" in s:

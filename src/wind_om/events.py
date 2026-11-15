@@ -9,8 +9,13 @@
   event fully inside an earlier one gets zero hours (it is a consequence, see ``compound.cascades``).
 * **Dominant cause.** The episode's cause is its event with the most attributed hours; its first-up event
   is kept as well.
+* **Fault time.** ``fault_h`` is the time the episode's failure-category stops were the reason the turbine
+  stood still (their attributed hours); a technician's maintenance stop that follows the fault, or an
+  uncategorised stop in the same episode, is in the episode duration but not in the fault time.
 * **Fleet-wide episodes.** Episodes that start within ``window`` on at least half of the turbines (and at least
   three) share a common cause - grid loss, park controller, storm - and are flagged.
+* **Coincident failures.** Failure episodes that start within ``window`` of a failure episode on another turbine
+  (``flag_coincident``) point to a partial common cause the fleet-wide rule misses (two or three turbines).
 * **Exposure.** Observation windows per turbine, minus periods without information (communication lost), are
   the time during which failures could be seen.
 
@@ -76,7 +81,8 @@ def episodes(df: pd.DataFrame, merge_gap=MERGE_GAP,
     """Stops -> (episodes, attributed segments). ``df`` must have closed ends (``close_events``).
 
     Episodes: episode_id, turbine_id, start, end, duration_h (first stop to restart), stop_h (union),
-    n_events, first_idx / first_code (first-up), failure, cause_idx / code / component / category.
+    fault_h (attributed hours of failure-category stops), n_events, first_idx / first_code (first-up), failure,
+    cause_idx / code / component / category.
     The cause is the failure-category stop with the most attributed hours when the episode has one (then
     ``failure`` is True: at some moment a fault was the reason the turbine stood still - a technician's manual
     stop that follows does not hide it), otherwise the stop with the most attributed hours.
@@ -113,6 +119,7 @@ def episodes(df: pd.DataFrame, merge_gap=MERGE_GAP,
     if len(seg):
         by = seg.groupby(["episode_id", "idx"])["hours"].sum().reset_index()
         by["is_failure"] = df.loc[by["idx"], "category"].isin(failure_categories).to_numpy() & (by["hours"] > 0)
+        ep["fault_h"] = by[by["is_failure"]].groupby("episode_id")["hours"].sum().reindex(ep["episode_id"])             .fillna(0.0).to_numpy()
         by = by.sort_values(["episode_id", "is_failure", "hours"], ascending=[True, False, False], kind="stable")
         top = by.drop_duplicates("episode_id").set_index("episode_id")
         ep["cause_idx"] = top["idx"].reindex(ep["episode_id"]).to_numpy()
@@ -120,11 +127,12 @@ def episodes(df: pd.DataFrame, merge_gap=MERGE_GAP,
     else:
         ep["cause_idx"] = pd.Series(dtype="int64")
         ep["failure"] = pd.Series(dtype=bool)
+        ep["fault_h"] = pd.Series(dtype=float)
     for c in ("code", "description", "category", "component"):
         if c in df.columns:
             ep[c] = df.loc[ep["cause_idx"], c].to_numpy() if len(ep) else pd.Series(dtype=object)
     ep["first_code"] = df.loc[ep["first_idx"], "code"].to_numpy() if len(ep) else pd.Series(dtype=object)
-    cols = ["episode_id", "turbine_id", "start", "end", "duration_h", "stop_h", "n_events", "first_idx",
+    cols = ["episode_id", "turbine_id", "start", "end", "duration_h", "stop_h", "fault_h", "n_events", "first_idx",
             "first_code", "failure", "cause_idx"] + [c for c in ("code", "description", "category", "component")
                                                      if c in ep]
     return ep[cols], seg
@@ -157,6 +165,22 @@ def flag_fleet_wide(ep: pd.DataFrame, n_turbines: int, window="5min", min_share:
     flags[order], groups[order] = fw, np.where(fw, grp, -1)
     out["fleet_wide"], out["fleet_group"] = flags, groups
     return out
+
+
+def flag_coincident(fail: pd.DataFrame, window="10min") -> pd.Series:
+    """True for failures that start within ``window`` of a failure on another turbine (index of ``fail``)."""
+    if fail.empty:
+        return pd.Series(dtype=bool)
+    order = np.argsort(_ns(fail["start"]), kind="stable")
+    t = _ns(fail["start"])[order]
+    tid = fail["turbine_id"].to_numpy()[order]
+    w = pd.Timedelta(window).value
+    lo = np.searchsorted(t, t - w, side="left")
+    hi = np.searchsorted(t, t + w, side="right")
+    flag = np.array([bool((tid[a:b] != tid[k]).any()) for k, (a, b) in enumerate(zip(lo, hi))])
+    out = np.zeros(len(fail), dtype=bool)
+    out[order] = flag
+    return pd.Series(out, index=fail.index)
 
 
 # ------------------------------------------------------------------------------------- interval arithmetic

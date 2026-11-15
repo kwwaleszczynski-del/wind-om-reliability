@@ -89,8 +89,8 @@ available for the years with 10-minute SCADA.</p>
 <p class="note" id="pareto-note"></p></div>
 
 <h2>2. Failure timeline</h2>
-<p>Every failure (forced-outage stop episode, fleet-wide common causes excluded), one row per turbine. Size: restore
-time; colour: component; diamonds: repeats of the same code within 7 days after restart. Drag to zoom, hover
+<p>Every failure (forced-outage stop episode, fleet-wide common causes excluded), one row per turbine. Size: episode
+duration; colour: component; diamonds: repeats of the same code within 7 days after restart. Drag to zoom, hover
 for the code.</p>
 <div class="card"><div id="timeline" class="plot" style="min-height:460px"></div></div>
 
@@ -101,19 +101,25 @@ for the code.</p>
     <p class="note" id="duane-note"></p></div>
   <div class="card"><h3>Failures per turbine-year</h3>
     <div id="yearly" class="plot"></div>
-    <p class="note">Calendar years in UTC; partial first and last years.</p></div>
+    <p class="note" id="yearly-note">Calendar years in UTC; partial first and last years.</p></div>
 </div>
+<div class="card"><h3>What the counts depend on</h3><div class="wide" id="sensitivity"></div>
+  <p class="note">A failure here is a forced-outage stop episode: stops of one turbine less than 10 minutes apart are
+  one episode, and episodes on at least half of the turbines within 5 minutes are a common cause, not a failure.
+  Other reasonable rules change the count by tens of per cent; coincident = a failure on another turbine within 10
+  minutes (a partial common cause the fleet-wide rule misses).</p></div>
 
 <h2>4. Bad actors</h2>
 <div class="grid2">
   <div class="card"><h3>Jack-knife diagram of status codes</h3>
     <div id="jack" class="plot"></div>
-    <p class="note">Knights' jack-knife: failures against mean time to restore (log axes). Dashed: mean failures per
-    code and the overall MTTR. Upper right: acute + chronic. Grey curves: equal downtime.</p></div>
+    <p class="note">Knights' jack-knife: failures against mean time down for the fault (log axes). Dashed: mean
+    failures per code and the overall MTTR. Upper right: acute + chronic. Grey curves: equal downtime.</p></div>
   <div class="card"><h3>MTBF and MTTR per turbine</h3>
     <div class="scroll" id="mtbf"></div>
-    <p class="note">MTBF = operating hours / failures with a 90 % chi-square interval; MTTR = mean time to restore
-    (first stop to restart, waiting included). Highlighted: more failures than the fleet rate explains
+    <p class="note">MTBF = operating hours / failures with a 90 % chi-square interval (it assumes independent
+    failures); MTTR = mean time down for the fault, waiting included. Rate / fleet and q count repeat chains (a code
+    that repeats within 7 days counts once): highlighted turbines have more chains than the fleet rate explains
     (Poisson test, false discovery rate 5 %).</p></div>
 </div>
 
@@ -217,15 +223,17 @@ function tiles(f) {
   const s = f.summary;
   const rs = s.restoration_shares || {};
   const t = [
-    [fmt(s.failures_per_turbine_year, 1), "failures per turbine-year"],
-    [fmt(s.mtbf_h, 0) + " h", "MTBF (operating hours)"],
+    [fmt(s.failures_per_turbine_year, 1), "forced-outage stop episodes per turbine-year"],
+    [fmt(s.mtbf_h, 0) + " h", "MTBF (operating hours; bootstrap " + fmt(s.mtbf_boot_lo_h, 0) + "-" + fmt(s.mtbf_boot_hi_h, 0) + ")"],
     [(s.ttr_median_h < 1 ? Math.round(60 * s.ttr_median_h) + " min" : fmt(s.ttr_median_h, 1) + " h") + " / " +
-     fmt(s.mttr_h, 1) + " h", "restore time: median / mean"],
+     fmt(s.mttr_h, 1) + " h", "time down for the fault: median / mean (MTTR)"],
     [pct(s.repeat_rate), "repeat failures (chance alone: " + pct(s.repeat_rate_chance) + ")"],
     [pct(rs.auto_reset), "failures cleared by automatic reset"],
-    [fmt(s.response_median_h, 1) + " h", "median time to technician on site"],
-    [fmt(s.crow_beta, 2), "Crow-AMSAA beta (90 % " + fmt(s.crow_beta_lo, 2) + "-" + fmt(s.crow_beta_hi, 2) + "): " + s.trend],
-    [fmt(s.observed_turbine_years, 0), "turbine-years of logs, " + s.failures.toLocaleString("en-GB") + " failures"],
+    [s.response_n ? fmt(s.response_median_h, 1) + " h" : "n/a",
+     s.response_n ? "median time to technician on site (n = " + s.response_n + ")" : "no on-site codes in this log"],
+    [fmt(s.crow_beta, 2), "Crow-AMSAA beta on repeat chains (turbine bootstrap " + fmt(s.crow_beta_lo, 2) + "-" +
+     fmt(s.crow_beta_hi, 2) + "): " + s.trend],
+    [fmt(s.observed_turbine_years, 0), "turbine-years of logs, " + s.failures.toLocaleString("en-GB") + " episodes"],
   ];
   document.getElementById("tiles").innerHTML = t.map(x =>
     `<div class="card tile"><div class="v">${x[0]}</div><div class="l">${esc(x[1])}</div></div>`).join("");
@@ -299,11 +307,17 @@ function drawTrend(f) {
              yaxis: {type: "log", title: {text: "cumulative failures"}}}), CFG);
   const s = f.summary;
   document.getElementById("duane-note").textContent =
-    `Pooled power-law process over all turbines and observation windows, age from commissioning: beta = ` +
-    `${fmt(s.crow_beta, 2)} (90 % ${fmt(s.crow_beta_lo, 2)}-${fmt(s.crow_beta_hi, 2)}), verdict "${s.trend}"; ` +
-    `Laplace test on the observed-time clock p = ${Number(s.p_laplace).toPrecision(2)}. Weibull shape of the times ` +
-    `between failures ${fmt(s.weibull_shape, 2)} (< 1: failures come in bursts). The line is the same law on the ` +
-    `fleet's cumulative time (beta ${fmt(f.crow.fleet.beta, 2)}, 90 % ${fmt(f.crow.fleet.beta_lo, 2)}-${fmt(f.crow.fleet.beta_hi, 2)}).`;
+    `Pooled power-law process, age from commissioning, fitted to the first failure of each repeat chain: beta = ` +
+    `${fmt(s.crow_beta, 2)}, 90 % interval from resampling whole turbines ${fmt(s.crow_beta_lo, 2)}-` +
+    `${fmt(s.crow_beta_hi, 2)}: "${s.trend}". On every failure, repeats included, beta would be ` +
+    `${fmt(s.crow_beta_all, 2)} with an interval that assumes independent events. Weibull shape of the times ` +
+    `between failures ${fmt(s.weibull_shape, 2)} (< 1: failures come in bursts). The line is the power law on the ` +
+    `fleet's cumulative time of all failures (beta ${fmt(f.crow.fleet.beta, 2)}).`;
+  const iu = f.yearly_cols.indexOf("unmapped_share");
+  const big = iu < 0 ? [] : f.yearly.filter(r => r[iu] > 0.05).map(r => r[0] + " " + Math.round(100 * r[iu]) + " %");
+  document.getElementById("yearly-note").textContent = "Calendar years in UTC; partial first and last years." +
+    (big.length ? " Share of active alarm hours from codes outside the code dictionary: " + big.join(", ") +
+     ". Their stops never count as failures, so these years are not comparable with the others." : "");
   const yc = f.yearly_cols, Y = f.yearly;
   const iy = yc.indexOf("year"), ir = yc.indexOf("failures_per_turbine_year"), im = yc.indexOf("mttr_h");
   Plotly.react("yearly", [
@@ -335,7 +349,7 @@ function drawJack(f) {
      hovertext: r.map(x => x[0]),
      hovertemplate: "code %{hovertext} %{customdata[0]}<br>%{x} failures, MTTR %{y:.2f} h<br>%{customdata[1]} h, " +
                     "%{customdata[2]}<extra></extra>"},
-  ]), layout({xaxis: {type: "log", title: {text: "failures"}}, yaxis: {type: "log", title: {text: "mean time to restore (h)"}},
+  ]), layout({xaxis: {type: "log", title: {text: "failures"}}, yaxis: {type: "log", title: {text: "mean fault time (h)"}},
               shapes: [{type: "line", x0: nl, x1: nl, yref: "paper", y0: 0, y1: 1, line: {dash: "dash", color: css("--muted")}},
                        {type: "line", y0: tl, y1: tl, xref: "paper", x0: 0, x1: 1, line: {dash: "dash", color: css("--muted")}}]}), CFG);
 }
@@ -367,9 +381,14 @@ function drawTables(f) {
     layout({margin: {l: 150, r: 16, t: 10, b: 40}, xaxis: {ticksuffix: " %"}, yaxis: {autorange: "reversed"}}), CFG);
   const on = rs.find(r => r[0] === "on_site");
   document.getElementById("restore-note").textContent = on ?
-    `Technician on site: median ${fmt(on[5], 1)} h, 90th percentile ${fmt(on[6], 1)} h from failure to the first on-site ` +
-    `event (failures that happened while someone was already there are left out). Automatic reset: restored within 20 min ` +
-    `with nothing logged (Senvion restarts itself after about 15 min).` : "No on-site role in this log.";
+    `Technician on site: median ${fmt(on[7], 1)} h, 90th percentile ${fmt(on[8], 1)} h from failure to the first ` +
+    `on-site event, from ${on[5]} failures; ${on[6]} more happened while someone was already there and are left out. ` +
+    `Automatic reset: restored within 20 min with nothing logged (Senvion restarts itself after about 15 min).` :
+    "No on-site role in this log.";
+  table("sensitivity", [["counting rule", r => esc(r[0])], ["failures", r => r[1].toLocaleString("en-GB"), 1],
+                        ["per turbine-year", r => fmt(r[2], 1), 1], ["MTBF h", r => fmt(r[3], 0), 1],
+                        ["vs published", r => (r[4] > 0 ? "+" : "") + Math.round(100 * r[4]) + " %", 1]],
+        f.sensitivity || []);
 }
 
 function drawScada(f) {

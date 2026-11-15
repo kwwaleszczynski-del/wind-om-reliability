@@ -143,13 +143,22 @@ def restoration(fail: pd.DataFrame, ev: pd.DataFrame, post="30min", auto_max="20
 
 
 def restoration_summary(res: pd.DataFrame) -> pd.DataFrame:
-    """Share of each restoration class, its median restore time and (on site) the response-time quantiles."""
+    """Share of each restoration class, its median restore time and (on site) the response-time quantiles.
+
+    ``response_n`` is the number of failures the response time rests on (on site, nobody already there);
+    ``technician_present_n`` the on-site failures left out because the on-site event came within the present
+    window (the failure happened during the work).
+    """
     out = res.groupby("restoration")["duration_h"].agg(failures="size", restore_median_h="median",
                                                         downtime_h="sum")
     out = out.reindex(["auto_reset", "remote", "on_site", "not_logged"]).dropna(how="all")
     out["share"] = out["failures"] / out["failures"].sum()
-    rt = res.loc[(res["restoration"] == "on_site") & ~res["technician_present"], "response_h"]
+    on = res["restoration"] == "on_site"
+    rt = res.loc[on & ~res["technician_present"], "response_h"].dropna()
+    out["response_n"], out["technician_present_n"] = np.nan, np.nan
     out["response_median_h"], out["response_p90_h"] = np.nan, np.nan
-    if "on_site" in out.index and len(rt):
-        out.loc["on_site", ["response_median_h", "response_p90_h"]] = rt.median(), rt.quantile(0.9)
+    if "on_site" in out.index:
+        out.loc["on_site", ["response_n", "technician_present_n"]] = len(rt), int((on & res["technician_present"]).sum())
+        if len(rt):
+            out.loc["on_site", ["response_median_h", "response_p90_h"]] = rt.median(), rt.quantile(0.9)
     return out.reset_index()

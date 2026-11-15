@@ -94,7 +94,7 @@ def test_kpi_pack_files(tmp_path):
                            repeat_prob=0.2, cascade_prob=0.5, onsite_prob=0.5, seed=12)
     a = analyse(log, mapping_frame())
     pack = kpi_pack(a, "2026-09", tz="Europe/Warsaw", farm="test farm")
-    assert pack.summary["Failures (month)"] == len(a.fail[(a.fail["start"] >= pd.Timestamp("2026-08-31 22:00",
+    assert pack.summary["Forced-outage episodes (month)"] == len(a.fail[(a.fail["start"] >= pd.Timestamp("2026-08-31 22:00",
                                                                                            tz="UTC"))
                                                          & (a.fail["start"] < pd.Timestamp("2026-09-30 22:00",
                                                                                            tz="UTC"))])

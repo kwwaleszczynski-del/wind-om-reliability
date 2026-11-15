@@ -20,6 +20,7 @@ import pandas as pd
 from wind_om import compound
 from wind_om import reliability as R
 from wind_om.analysis import Analysis, Settings, analyse
+from wind_om.events import overlap_hours
 from wind_om.mapping import read_mapping
 from wind_om.pareto import pareto, vital_few
 from wind_om.spares import spares
@@ -31,6 +32,29 @@ CLOCK_YEAR = {"kelmarsh": 2020, "penmanshiel": 2020, "hill_of_towie": 2021}
 KPI_MONTH = {"kelmarsh": "2021-03", "penmanshiel": "2020-11", "hill_of_towie": "2021-11"}
 NAMES = {"kelmarsh": "Kelmarsh (6 x Senvion MM92)", "penmanshiel": "Penmanshiel (14 x Senvion MM82)",
          "hill_of_towie": "Hill of Towie (21 x Siemens SWT-2.3-VS-82)"}
+# codes whose forced-outage episodes are often not turbine faults: tower-oscillation stops (they come in
+# storms, on several turbines at once), remote manual stops and "externally stopped" (operator actions)
+SENSITIVITY_EXCLUDE = {"senvion_mm": ("without tower-oscillation, remote manual and external stops",
+                                      ("4510", "4520", "4530", "4540", "21", "9210"))}
+MAX_UNMAPPED_SHARE = 0.05  # above this in any year, rates are not comparable across years
+N_BOOT = 500
+
+
+def dictionary_coverage(a: Analysis) -> pd.DataFrame:
+    """Active alarm hours per year of codes outside the code mapping and their share of all active alarm hours.
+
+    A mapping built from one year cannot classify codes that only appear in other years: their stops never
+    count as failures, so a year with many such hours shows too few failures.
+    """
+    e = a.ev[a.ev["end"] > a.ev["start"]]
+    unm = ~e["mapped"].astype(bool) if "mapped" in e else pd.Series(False, index=e.index)
+    rows = []
+    for y in _years(a):
+        s, t = pd.Timestamp(f"{y}-01-01", tz="UTC"), pd.Timestamp(f"{y + 1}-01-01", tz="UTC")
+        h = overlap_hours(e["start"], e["end"], s, t)
+        tot, u = float(h.sum()), float(h[unm.to_numpy()].sum())
+        rows.append({"year": y, "active_h": tot, "unmapped_active_h": u, "unmapped_share": u / tot if tot else np.nan})
+    return pd.DataFrame(rows)
 
 
 def _years(a: Analysis) -> list[int]:
@@ -55,10 +79,13 @@ def yearly(a: Analysis) -> pd.DataFrame:
         rp = a.rep[(a.rep["start"] >= s) & (a.rep["start"] < e)]
         rs = a.res[(a.res["start"] >= s) & (a.res["start"] < e)]
         cat = pareto(a.ev, a.seg, a.ep, "category", s, e).set_index("category")
+        r = R.restore_h(f)
         row = {"year": y, "observed_turbine_years": obs_h / R.HOURS_PER_YEAR, "failures": len(f),
                "failures_per_turbine_year": len(f) / (obs_h / R.HOURS_PER_YEAR) if obs_h else np.nan,
-               "mtbf_h": op_h / len(f) if len(f) else np.nan, "mttr_h": f["duration_h"].mean(),
-               "ttr_median_h": f["duration_h"].median(), "failure_downtime_h": f["duration_h"].sum(),
+               "repeat_chains": int((rp["chain_pos"] == 0).sum()),
+               "coincident_failures": int(f["coincident"].sum()) if "coincident" in f else 0,
+               "mtbf_h": op_h / len(f) if len(f) else np.nan, "mttr_h": r.mean(),
+               "ttr_median_h": r.median(), "episode_mean_h": f["duration_h"].mean(), "failure_downtime_h": r.sum(),
                "repeat_rate": rp["is_repeat"].mean() if len(rp) else np.nan,
                "auto_reset_share": (rs["restoration"] == "auto_reset").mean() if len(rs) else np.nan,
                "on_site_share": (rs["restoration"] == "on_site").mean() if len(rs) else np.nan}
@@ -70,7 +97,43 @@ def yearly(a: Analysis) -> pd.DataFrame:
             row["lost_mwh_failures"] = cat.loc["forced_outage", "lost_mwh"] if seen and "forced_outage" in cat.index \
                 else np.nan
         rows.append(row)
-    return pd.DataFrame(rows)
+    out = pd.DataFrame(rows)
+    return out.merge(dictionary_coverage(a)[["year", "unmapped_active_h", "unmapped_share"]], on="year", how="left")
+
+
+def sensitivity(ev: pd.DataFrame, mapping: pd.DataFrame, t0, t1, origin: dict, settings: Settings,
+                exclude=None, base: Analysis | None = None) -> pd.DataFrame:
+    """Failure counts, rates and MTBF under other episode and common-cause rules (one row per variant).
+
+    Variants: the published rule (stops within 10 minutes form one episode, fleet-wide = half the turbines within
+    5 minutes); merge gaps of 1 h and 24 h; coincident failures removed (a failure on another turbine within 10
+    minutes: partial common cause); both; repeat chains only; and an optional code exclusion
+    (``SENSITIVITY_EXCLUDE``).
+    """
+    from dataclasses import replace
+
+    def row(label, a, f):
+        obs = a.expo["hours"].sum() / R.HOURS_PER_YEAR
+        n = len(f)
+        return {"variant": label, "failures": n, "failures_per_turbine_year": n / obs if obs else np.nan,
+                "mtbf_h": a.up["hours"].sum() / n if n else np.nan}
+
+    a = base or analyse(ev, mapping, t0, t1, settings=settings, origin=origin)
+    rows = [row("published: 10 min merge gap", a, a.fail)]
+    gaps = {}
+    for gap in ("1h", "24h"):
+        gaps[gap] = analyse(ev, mapping, t0, t1, settings=replace(settings, merge_gap=gap), origin=origin)
+        rows.append(row(f"merge gap {gap}", gaps[gap], gaps[gap].fail))
+    rows.append(row("coincident failures removed (another turbine within 10 min)", a, a.fail[~a.fail["coincident"]]))
+    g = gaps["1h"]
+    rows.append(row("merge gap 1h and coincident removed", g, g.fail[~g.fail["coincident"]]))
+    rows.append(row("repeat chains only (first failure of each chain)", a, R.decluster(a.rep)))
+    if exclude:
+        label, codes = exclude
+        rows.append(row(label, a, a.fail[~a.fail["code"].isin(codes)]))
+    out = pd.DataFrame(rows)
+    out["vs_published"] = out["failures"] / out["failures"].iloc[0] - 1
+    return out
 
 
 def full_tables(a: Analysis) -> tuple[dict, dict]:
@@ -82,8 +145,8 @@ def full_tables(a: Analysis) -> tuple[dict, dict]:
         "pareto_categories": pareto(a.ev, a.seg, a.ep, "category"),
         "mtbf_turbines": R.mtbf_mttr(a.fail, a.up, by=["turbine_id"]),
         "mtbf_components": R.mtbf_mttr(a.fail, a.up, by=["component"]),
-        "bad_actor_turbines": R.turbine_outliers(a.fail, a.up),
-        "bad_actor_code_turbine": R.code_turbine_outliers(a.fail, a.up),
+        "bad_actor_turbines": R.turbine_outliers(a.rep, a.up),
+        "bad_actor_code_turbine": R.code_turbine_outliers(a.rep, a.up),
         "jackknife_codes": R.jackknife(a.fail, "code"),
         "jackknife_components": R.jackknife(a.fail, "component"),
         "repeats": compound.repeat_summary(a.rep, operating_h=up_h, days=a.settings.repeat_days),
@@ -93,14 +156,19 @@ def full_tables(a: Analysis) -> tuple[dict, dict]:
         "yearly": yearly(a),
         "duane": R.duane_points(a.fail, a.expo),
     }
-    ln = [{"component": c, **R.lognormal_fit(g["duration_h"])} for c, g in a.fail.groupby("component")]
+    ln = [{"component": c, **R.lognormal_fit(R.restore_h(g))} for c, g in a.fail.groupby("component")]
     t["restore_lognormal"] = pd.DataFrame(ln).sort_values("n", ascending=False) if ln else pd.DataFrame()
     wb = [{"group": "all", **R.weibull_fit(*R.tbf(a.fail, a.up)).as_dict()}]
+    wlo, whi = R.turbine_bootstrap(a.fail, a.up, lambda f, u, o: R.weibull_fit(*R.tbf(f, u)).shape, 200)
+    wb[0].update({"weibull_shape_boot_lo": wlo, "weibull_shape_boot_hi": whi})
     for c, n in a.fail["component"].value_counts().items():
         if n >= 20:
             wb.append({"group": c, **R.weibull_fit(*R.tbf(a.fail, a.up, group=("component", c))).as_dict()})
     t["weibull"] = pd.DataFrame(wb)
-    ca = [{"group": "fleet", **R.crow_amsaa_row(R.crow_amsaa(a.fail, a.expo, a.origin))}]
+    tr = R.trend(a.rep, a.expo, a.origin, n_boot=N_BOOT)
+    ca = [{"group": "fleet", **R.crow_amsaa_row(R.crow_amsaa(a.fail, a.expo, a.origin))},
+          {"group": "fleet, repeat chains", **R.crow_amsaa_row(R.crow_amsaa(R.decluster(a.rep), a.expo, a.origin)),
+           "beta_boot_lo": tr["beta_boot_lo"], "beta_boot_hi": tr["beta_boot_hi"], "verdict": tr["verdict"]}]
     for tid in a.turbines:
         ca.append({"group": tid, **R.crow_amsaa_row(R.crow_amsaa(a.fail[a.fail["turbine_id"] == tid],
                                                                  a.expo[a.expo["turbine_id"] == tid], a.origin))})
@@ -115,20 +183,34 @@ def full_tables(a: Analysis) -> tuple[dict, dict]:
                                                       category=("category", lambda s: s.mode()[0]))
                        .reset_index(drop=True) if len(fw) else pd.DataFrame())
     s = a.summary()
-    fleet = t["crow_amsaa"].iloc[0]
-    s.update({"start": str(a.start), "end": str(a.end), "crow_beta": fleet["crow_beta"],
-              "crow_beta_lo": fleet["crow_beta_lo"], "crow_beta_hi": fleet["crow_beta_hi"],
-              "p_laplace": fleet["p_laplace"], "trend": fleet["verdict"],
+    cov = dictionary_coverage(a)
+    max_unm = float(cov["unmapped_share"].max())
+    verdict = tr["verdict"]
+    if max_unm > MAX_UNMAPPED_SHARE:
+        verdict = "not assessed: code dictionary does not cover every year"
+    mlo, mhi = R.mtbf_bootstrap(a.fail, a.up)
+    rs = t["restoration"].set_index("restoration")
+    s.update({"start": str(a.start), "end": str(a.end),
+              "crow_beta": tr["beta"], "crow_beta_lo": tr["beta_boot_lo"], "crow_beta_hi": tr["beta_boot_hi"],
+              "crow_beta_profile_lo": tr["beta_lo"], "crow_beta_profile_hi": tr["beta_hi"],
+              "crow_beta_all": tr["beta_all"], "crow_beta_all_lo": tr["beta_all_lo"],
+              "crow_beta_all_hi": tr["beta_all_hi"], "p_trend_all": tr["p_all"], "p_trend": tr["p_trend"],
+              "p_laplace": tr["p_laplace"], "trend": verdict, "trend_statistical": tr["verdict"],
+              "unmapped_share_max_year": max_unm,
+              "mtbf_boot_lo_h": mlo, "mtbf_boot_hi_h": mhi,
               "weibull_shape": t["weibull"].iloc[0]["weibull_shape"],
-              "weibull_shape_lo": t["weibull"].iloc[0]["weibull_shape_lo"],
-              "weibull_shape_hi": t["weibull"].iloc[0]["weibull_shape_hi"],
+              "weibull_shape_lo": t["weibull"].iloc[0]["weibull_shape_boot_lo"],
+              "weibull_shape_hi": t["weibull"].iloc[0]["weibull_shape_boot_hi"],
               "codes_80pct_downtime": vital_few(t["pareto_codes"]),
               "codes_with_downtime": int((t["pareto_codes"]["hours"] > 0).sum()),
               "bad_actor_turbines": t["bad_actor_turbines"].loc[t["bad_actor_turbines"]["bad_actor"],
                                                                 "turbine_id"].tolist(),
               "bad_actor_code_turbine_pairs": int(t["bad_actor_code_turbine"]["bad_actor"].sum()),
               "restoration_shares": dict(zip(t["restoration"]["restoration"], t["restoration"]["share"])),
-              "response_median_h": t["restoration"].set_index("restoration")["response_median_h"].get("on_site"),
+              "response_median_h": rs["response_median_h"].get("on_site"),
+              "response_p90_h": rs["response_p90_h"].get("on_site"),
+              "response_n": rs["response_n"].get("on_site"),
+              "technician_present_n": rs["technician_present_n"].get("on_site"),
               "unmapped_downtime_share": float(t["pareto_components"].set_index("component")["share"].get(
                   "unmapped", 0.0))})
     if len(t["repeats"]):
@@ -260,7 +342,10 @@ def run_study(data_dir: Path, scada_dir: Path | None, results: Path, docs: Path,
                      int(((mp["source"] != "published") & (mp["stopping"] == "1")).sum()), target.name)
         mapping = read_mapping(meta["mapping"])
         # the open logs hold routine messages every day: a week of silence means missing files
-        a = analyse(ev, mapping, t0, t1, settings=Settings(max_silence="7D"), origin=meta["cod"])
+        st = Settings(max_silence="7D")
+        a = analyse(ev, mapping, t0, t1, settings=st, origin=meta["cod"])
+        sens = sensitivity(ev, mapping, t0, t1, meta["cod"], st, SENSITIVITY_EXCLUDE.get(meta["mapping"]), base=a)
+        sens.to_csv(out / "sensitivity.csv", index=False)
         checks = None
         if scada_dir is not None:
             a.seg, checks = scada_checks(farm, a, scada_dir)
@@ -299,6 +384,7 @@ def run_study(data_dir: Path, scada_dir: Path | None, results: Path, docs: Path,
         write_excel(pack, ex / f"kpi_{farm}_{month}.xlsx")
         write_html(pack, ex / f"kpi_{farm}_{month}.html")
         dash[farm] = dashboard_data(farm, a, tables, summary, checks)
+        dash[farm]["sensitivity"] = _records(sens, list(sens.columns), 3)
         log.info("%s done: %d failures, MTBF %.0f h, MTTR %.1f h, trend %s", farm, summary["failures"],
                  summary["mtbf_h"], summary["mttr_h"], summary["trend"])
     pd.DataFrame(summaries).T.to_csv(Path(results) / "summary.csv")
@@ -369,10 +455,10 @@ def dashboard_data(farm: str, a: Analysis, t: dict, s: dict, checks) -> dict:
         "jack_limits": [float(t["jackknife_codes"]["n_limit"].iloc[0]),
                         float(t["jackknife_codes"]["mttr_limit_h"].iloc[0])] if len(t["jackknife_codes"]) else None,
         "jack_desc": dict(zip(t["pareto_codes"]["code"], t["pareto_codes"]["description"])),
-        "mtbf": _records(t["mtbf_turbines"].merge(t["bad_actor_turbines"][["turbine_id", "ratio", "q",
+        "mtbf": _records(t["mtbf_turbines"].merge(t["bad_actor_turbines"][["turbine_id", "chains", "ratio", "q",
                                                                             "bad_actor"]], on="turbine_id"),
                          ["turbine_id", "failures", "mtbf_h", "mtbf_lo_h", "mtbf_hi_h", "mttr_h", "ttr_median_h",
-                          "downtime_h", "ratio", "q", "bad_actor"], 4),
+                          "downtime_h", "ratio", "q", "bad_actor", "chains"], 4),
         "components": _records(t["mtbf_components"], ["component", "failures", "failures_per_turbine_year",
                                                       "mtbf_h", "mttr_h", "ttr_median_h", "downtime_h"], 3),
         "repeats": _records(t["repeats"].head(12), ["code", "description", "failures", "repeats", "repeat_rate",

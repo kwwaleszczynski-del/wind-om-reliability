@@ -24,6 +24,7 @@ class Settings:
     merge_gap: str = "10min"
     fleet_window: str = "5min"
     fleet_share: float = 0.5
+    coincident_window: str = "10min"
     repeat_days: float = 7.0
     repeat_by: str = "code"
     cascade_window: str = "2min"
@@ -59,17 +60,26 @@ class Analysis:
         return sorted(self.expo["turbine_id"].unique())
 
     def summary(self) -> dict:
+        """Headline numbers. ``failures`` are forced-outage stop episodes (see ``reliability``); MTTR is the
+        mean fault time, ``episode_mean_h`` the mean episode duration (first stop to restart)."""
         f, up = self.fail, self.up
         hours = up["hours"].sum()
         obs_years = self.expo["hours"].sum() / reliability.HOURS_PER_YEAR
+        r = reliability.restore_h(f)
+        n = len(f)
         return {"turbines": len(self.turbines), "observed_turbine_years": obs_years,
-                "stop_episodes": len(self.ep), "failures": len(f),
+                "stop_episodes": len(self.ep), "failures": n,
                 "fleet_wide_episodes": int(self.ep["fleet_wide"].sum()) if len(self.ep) else 0,
-                "failures_per_turbine_year": len(f) / obs_years if obs_years else np.nan,
-                "mtbf_h": hours / len(f) if len(f) else np.nan,
-                "mttr_h": f["duration_h"].mean() if len(f) else np.nan,
-                "ttr_median_h": f["duration_h"].median() if len(f) else np.nan,
-                "failure_downtime_h": f["duration_h"].sum(),
+                "coincident_failures": int(f["coincident"].sum()) if "coincident" in f else 0,
+                "repeat_chains": int((self.rep["chain_pos"] == 0).sum()) if len(self.rep) else 0,
+                "failures_per_turbine_year": n / obs_years if obs_years else np.nan,
+                "mtbf_h": hours / n if n else np.nan,
+                "mttr_h": r.mean() if n else np.nan,
+                "ttr_median_h": r.median() if n else np.nan,
+                "mttr_top5_share": r.nlargest(5).sum() / r.sum() if n and r.sum() > 0 else np.nan,
+                "episode_mean_h": f["duration_h"].mean() if n else np.nan,
+                "episode_median_h": f["duration_h"].median() if n else np.nan,
+                "failure_downtime_h": r.sum(),
                 "repeat_rate": self.rep["is_repeat"].mean() if len(self.rep) else np.nan}
 
 
@@ -91,6 +101,8 @@ def analyse(log_df: pd.DataFrame, mapping: pd.DataFrame | None = None, start=Non
     up = reliability.uptime(ep, expo)
     fail = reliability.failures(ep, min_duration_h=st.min_failure_h)
     fail = fail[(fail["start"] >= t0) & (fail["start"] < t1)].reset_index(drop=True)
+    fail["coincident"] = events.flag_coincident(fail, st.coincident_window).to_numpy(dtype=bool) if len(fail) \
+        else pd.Series(dtype=bool)
     rep = compound.repeats(fail, st.repeat_days, st.repeat_by)
     cas, pairs = compound.cascades(ev, ep, st.cascade_window)
     res = compound.restoration(fail, ev, st.restore_post, st.auto_max, st.present_window)
